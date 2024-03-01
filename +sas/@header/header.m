@@ -82,6 +82,11 @@ classdef header < handle
             obj.os_maker = char(bytes(257+a12:257+a12+15));
             obj.os_name = char(bytes(273+a12:273+a12+15));
 
+            status = fseek(fid,obj.header_length+1,'bof');
+            if status == -1
+                error('Unexpected error when seeking to first page')
+            end
+
 
 % header_length
 %         page_size
