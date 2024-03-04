@@ -1,13 +1,23 @@
 classdef column_text_subheader
-    %UNTITLED3 Summary of this class goes here
-    %   Detailed explanation goes here
+    %
+    %   sas.column_text_subheader
+    %
+    %   Contains strings but needs other subheaders to identify which
+    %   string is which
+    
 
     properties
-        Property1
+        bytes
     end
 
     methods
-        function obj = column_text_subheader(bytes)
+        function obj = column_text_subheader(bytes,is_u64)
+            %
+            %   5:8 - size of block
+            %   17: 
+
+            %??? Need LCS/LCP from row_size_subheader
+            obj.bytes = bytes;
         end
     end
 end

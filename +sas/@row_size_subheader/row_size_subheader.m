@@ -6,8 +6,9 @@ classdef row_size_subheader < handle
     %   https://github.com/WizardMac/ReadStat/blob/dev/src/sas/readstat_sas7bdat_read.c#L231
 
     properties
-        row_length
-        total_row_count %20
+        bytes
+        row_length %RL
+        total_row_count %TRC
         col_count_p1
         col_count_p2
         max_row_count_on_mix_page
@@ -42,9 +43,18 @@ classdef row_size_subheader < handle
     %}
 
     methods
-        function obj = row_size_subheader(bytes)
+        function obj = row_size_subheader(bytes,is_u64)
+            obj.bytes = bytes;
 
-            keyboard
+            obj.row_length = double(typecast(bytes(21:24),'uint32'));
+            obj.total_row_count = double(typecast(bytes(25:28),'uint32'));
+            obj.col_count_p1 = double(typecast(bytes(37:40),'uint32'));
+            obj.col_count_p2 = double(typecast(bytes(41:44),'uint32'));
+            obj.max_row_count_on_mix_page = double(typecast(bytes(61:64),'uint32'));
+            obj.n_pages_subheader_data = double(typecast(bytes(272:275),'uint32'));
+            obj.max_length_column_names = double(typecast(bytes(423:426),'uint32'));
+            obj.max_length_columns_labels = double(typecast(bytes(425:428),'uint32'));
+
         end
     end
 end
