@@ -238,7 +238,7 @@ classdef header < handle
             %Haven't copmpared to MacWizard's version ...
 
             obj.sas_release = char(bytes(217+a12:224+a12));
-            obj.sas_host = char(bytes(225+a12:240+a12));
+            obj.sas_host = h_string_clean(char(bytes(225+a12:240+a12)));
             obj.os_version_number = char(bytes(241+a12:256+a12));
             obj.os_maker = char(bytes(257+a12:272+a12));
             obj.os_name = char(bytes(273+a12:288+a12));
@@ -247,12 +247,13 @@ classdef header < handle
             if status == -1
                 oerror('Unexpected error when seeking to first page')
             end
-
-            keyboard
-
-            
         end
     end
+end
+
+function out = h_string_clean(str)
+    out = str;
+    out(out == 0) = [];
 end
 
 function matlab_time = h__unixToDatenum(unix_time)

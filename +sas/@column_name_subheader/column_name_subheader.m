@@ -3,6 +3,9 @@ classdef column_name_subheader < handle
     %   Class:
     %   sas.column_name_subheader
 
+
+    %   Multiple names ...
+
     properties
         text_index
         text_offset

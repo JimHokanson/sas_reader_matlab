@@ -40,6 +40,18 @@ classdef page < handle
 
 
         sub_headers
+
+        row_size_subheader
+        col_size_subheader
+        signature_subheader
+        format_subheaders
+
+        %These all show up in the signatures subheader
+        %which makes me think it is OK to have more than 1
+        col_text_headers
+        col_attr_headers
+        col_name_headers
+        col_list_headers
     end
 
     %{
@@ -194,18 +206,32 @@ classdef page < handle
             end
             bytes = fread(fid,h.page_length,'*uint8');
 
-            %     'F6F6F6F6' - 4143380214 - column-size subheader
-            %     'F7F7F7F7' - 4160223223 - row-size subheader
+            %     'F6F6F6F6' - 4143380214 - column-size subheader, n=1?
+            %     'F7F7F7F7' - 4160223223 - row-size subheader, n=1?
             %     'FFFFFBFE' - 4294966270 - column-format
             %     'FFFFFC00' - 4294966272 - signature counts
+            %     'FFFFFFF9' - 4294967289 - column WTF3 - seen in sigs subheader
+            %     'FFFFFFFA' - 4294967290 - column WTF2 - seen in sigs subheader
+            %     'FFFFFFFB' - 4294967291 - column WTF - seen in sigs subheader
             %     'FFFFFFFC' - 4294967292 - column attributes
-            %     'FFFFFFFD' - 4294967293 - column text
+            %     'FFFFFFFD' - 4294967293 - column text, n >= 1?
             %     'FFFFFFFE' - 4294967294 - column list
-            %     'FFFFFFFF' - 4294967295 - column name
+            %     'FFFFFFFF' - 4294967295 - column name, n = ???
 
             %   #define SAS_SUBHEADER_SIGNATURE_COLUMN_MASK    0xFFFFFFF8
             %   /* Seen in the wild: FA (unknown), F8 (locale?) */
 
+            format_headers = cell(1,100);
+            format_I = 0;
+
+            col_text_headers = {};
+            col_attr_headers = {};
+            col_name_headers = {};
+            col_list_headers = {};
+
+            row_size_subheader_set = false;
+            column_size_subheader_set = false;
+            signature_subheader_set = false;
             if h.is_u64
                 is_u64 = true;
                 error('Unhandled case')
@@ -222,31 +248,67 @@ classdef page < handle
                     end
                     header_signature = typecast(bytes(offset:offset+3),'uint32');
                     sigs(i) = header_signature;
+                    %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas7bdat_read.c#L626
                     switch header_signature
                         case 4143380214 %column-size subheader
-                            sub_headers{i} = sas.column_size_subheader(b2,is_u64);
-                            column_size_subheader = sub_headers{i};
+                            %-----------------------------------------
+                            if column_size_subheader_set
+                                error('Assumption violated')
+                            end
+                            obj.col_size_subheader = sas.column_size_subheader(b2,is_u64);
+                            sub_headers{i} = obj.col_size_subheader;
+                            column_size_subheader_set = true;
                         case 4160223223 %row-size subheader
-                            sub_headers{i} = sas.row_size_subheader(b2,is_u64);
-                            row_size_subheader = sub_headers{i};
-                        case 4294966270 
+                            %-----------------------------------------
+                            if row_size_subheader_set
+                                error('Assumption violated')
+                            end
+                            obj.row_size_subheader = sas.row_size_subheader(b2,is_u64);
+                            sub_headers{i} = obj.row_size_subheader;
+                            row_size_subheader_set = true;
+                        case 4294966270  %column-format subheader
+                            %-----------------------------------------
+                            %n = 1 per column
+                            %- info stored in ???
+                            format_I = format_I + 1;
                             sub_headers{i} = sas.column_format_subheader(b2,is_u64);
-                            column_format_subheader = sub_headers{i};
+                            format_headers(format_I) = sub_headers(i);
+                            %- format
+                            %- label
                         case 4294966272
-                            sub_headers{i} = sas.signature_counts_subheader(b2,is_u64);
-                            signature_counts_subheader = sub_headers{i};
+                            %-----------------------------------------
+                            if signature_subheader_set
+                                error('Assumption violated')
+                            end
+                            obj.signature_subheader = sas.signature_counts_subheader(b2,is_u64);
+                            sub_headers{i} = obj.signature_subheader;
+                            %When a particular subheader first and last 
+                            %appears
+                            signature_subheader_set = true;
                         case 4294967292
+                            %-----------------------------------------
                             sub_headers{i} = sas.column_attributes_subheader(b2,is_u64);
-                            column_attributes_subheader = sub_headers{i};
+                            col_attr_headers(end+1) = sub_headers(i); %#ok<AGROW> 
+                            %The column attribute subheader holds
+                            %information regarding the column offsets
+                            %within a data row, the column widths, and the
+                            %column types (either numeric or character).
                         case 4294967293 
                             sub_headers{i} = sas.column_text_subheader(b2,is_u64);
-                            column_text_subheader = sub_headers{i};
+                            col_text_headers(end+1) = sub_headers(i); %#ok<AGROW> 
+                            %text but not linked to any column
                         case 4294967294
                             sub_headers{i} = sas.column_list_subheader(b2,is_u64);
-                            column_list_subheader = sub_headers{i};
+                            col_list_headers(end+1) = sub_headers(i); %#ok<AGROW> 
+                            %Unclear what this is ...
                         case 4294967295   
                             sub_headers{i} = sas.column_name_subheader(b2,is_u64);
-                            column_name_subheader = sub_headers{i};
+                            col_name_headers(end+1) = sub_headers(i); %#ok<AGROW> 
+                            %text index, offset, length 
+                            %
+                            %-names
+
+                            %For each 
                         otherwise
                             error('Unrecognized header')
                     end
@@ -255,20 +317,28 @@ classdef page < handle
 
             obj.sub_headers = sub_headers;
 
+            obj.format_subheaders = [format_headers{1:format_I}];
+
+            obj.col_text_headers = [col_text_headers{:}];
+            obj.col_attr_headers = [col_attr_headers{:}];
+            obj.col_name_headers = [col_name_headers{:}];
+            obj.col_list_headers = [col_list_headers{:}];
+
+
+
             DL = mod((B+8+SC*SL+7),8)*8;
             RC = BC - SC;
 
             I = B+8+SC*SL+DL+1;
 
+            %{
             formats = sub_headers(sigs == 4294966270);
             n_columns = length(formats);
-            keyboard
             cols = cell(1,n_columns);
             for i = 1:n_columns
-                cols{i} = sas.column(formats{i});
+                cols{i} = sas.column(i,formats{i},column_name_subheader,column_text_subheader);
             end
-
-            keyboard
+            %}
 
         end
     end

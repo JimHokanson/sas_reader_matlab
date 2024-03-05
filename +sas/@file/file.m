@@ -16,21 +16,50 @@ classdef file < handle
     %   
 
     properties
-        Property1
+        header
+        n_pages
+        first_page
+        columns
     end
 
     methods
         function obj = file(file_path)
+            %Open file
             fid = fopen(file_path,'r');
-            h = sas.header(fid);
 
-            n_pages = h.page_count;
-            all_pages = cell(1,n_pages);
-            for i = 1:n_pages
-                all_pages{i} = sas.page(fid,h);
+            %Header parse
+            h = sas.header(fid);
+            obj.header = h;
+
+            obj.n_pages = h.page_count;
+            all_pages = cell(1,obj.n_pages);
+
+            %Pass 1 - check signatures, are we done to make column?
+            p = sas.page(fid,h);
+            obj.first_page = p;
+
+            if any(p.signature_subheader.page_last_appear > 1)
+                error('Unhandled case')
             end
 
+            formats = p.format_subheaders;
+            n_columns = length(formats);
+            cols = cell(1,n_columns);
+            for i = 1:n_columns
+                cols{i} = sas.column(i,formats(i),p.col_name_headers,...
+                    p.col_text_headers,p.col_attr_headers);
+            end
+
+            obj.columns = [cols{:}];
+
             keyboard
+
+            for i = 2:obj.n_pages
+                all_pages{i} = p;
+                keyboard
+            end
+
+            
         end
     end
 end
