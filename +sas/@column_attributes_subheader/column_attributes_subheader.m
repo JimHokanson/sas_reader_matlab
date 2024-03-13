@@ -4,6 +4,11 @@ classdef column_attributes_subheader < handle
     %   sas.column_attributes
 
     properties
+
+        unknown7
+        unknown9
+        unknown11
+        
         data_row_offset
         column_width
         name_length_flag
@@ -15,24 +20,41 @@ classdef column_attributes_subheader < handle
     methods
         function obj = column_attributes_subheader(bytes,is_u64)
             %
-            %
-            %I=12|16
+            %   1:4    1:8 - signature
+            %   5:6    9:10  - remaining length
+            %   7:8    11:12 - unknown7
+            %   9:10   13:14 - unknown9
+            %   11:12  15:16 - unknown11
+            %   13:X   17:X  - specification of attributes
             
             QL = length(bytes);
 
             if is_u64
                 I = 16;
                 n_vectors = (QL-28)/16;
+                obj.unknown7 = typecast(bytes(9:10),'int16');
+                obj.unknown9 = typecast(bytes(11:12),'int16');
+                obj.unknown11 = typecast(bytes(13:14),'int16');
+
+                %Column attribute vectors
+                data_row_offset = zeros(n_vectors,1);
+                column_width = zeros(n_vectors,1);
+                name_length_flag = zeros(n_vectors,1);
+                column_type = zeros(n_vectors,1);
+                for i = 1:n_vectors
+                    data_row_offset(i) = typecast(bytes(I+1:I+8),'uint64');
+                    column_width(i) = typecast(bytes(I+9:I+12),'uint32');
+                    name_length_flag(i) = typecast(bytes(I+13:I+14),'uint16');
+                    column_type(i) = bytes(I+15);
+                    I = I + 16;
+                end
             else
                 I = 12;
                 n_vectors = (QL-20)/12;
-            end
+                obj.unknown7 = typecast(bytes(7:8),'int16');
+                obj.unknown9 = typecast(bytes(9:10),'int16');
+                obj.unknown11 = typecast(bytes(10:11),'int16');
 
-
-
-            if is_u64
-                error('Not yet implemented')
-            else
                 %Column attribute vectors
                 data_row_offset = zeros(n_vectors,1);
                 column_width = zeros(n_vectors,1);
@@ -52,6 +74,21 @@ classdef column_attributes_subheader < handle
             obj.name_length_flag = name_length_flag;
             obj.column_type = column_type;
 
+        end
+        function out = merge(obj1,obj2)
+                temp = [obj1 obj2];
+
+                out = temp(1);
+                for i = 2:length(temp)
+                    obj2 = temp(i);
+                    out.unknown7 = [out.unknown7 obj2.unknown7];
+                    out.unknown9 = [out.unknown9 obj2.unknown9];
+                    out.unknown11 = [out.unknown11 obj2.unknown11];
+                    out.data_row_offset = [out.data_row_offset; obj2.data_row_offset];
+                    out.column_width = [out.column_width; obj2.column_width];
+                    out.name_length_flag = [out.name_length_flag; obj2.name_length_flag];
+                    out.column_type = [out.column_type; obj2.column_type];
+                end
         end
     end
 end

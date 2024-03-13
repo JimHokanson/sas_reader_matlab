@@ -27,27 +27,60 @@ classdef signature_counts_subheader < handle
             %   The page itself has 7 pages
             %
             %
-            %
+
             %65 - start of subheader count vectors
 
-            %1:4 - signature
-            %5:8 - first appear
+
+            % - Not handled by Python code
+            % - TODO: Check readstat
+            % - what about Pandas version
+
+            %1:4   1:8    - signature
+            %5:8   9:16   - length?
+            %9:12  17:24  - int, usually 4
+            %13:14 25:26  - int, usually 7 (number of nonzero SCVs?)
+            %15:64 27:120 - ????
+            %65:x  121:X
+
+
+
+
+
+            N_SUBS = 12;
+
+            sigs = zeros(N_SUBS,1);
+            names = cell(N_SUBS,1);
+            p_first_appear = zeros(N_SUBS,1);
+            p_first_pointer = zeros(N_SUBS,1);
+            n_pages = zeros(N_SUBS,1);
+            p_last_pointer = zeros(N_SUBS,1);
+
+
+            %1:4  - signature
+            %5:8  - first appear
             %9:10 - pointer
             %13:16 - last appear
             %17:18 - pointer
-            %
 
-            sigs = zeros(12,1);
-            names = cell(12,1);
-            p_first_appear = zeros(12,1);
-            p_first_pointer = zeros(12,1);
-            p_last_appear = zeros(12,1);
-            p_last_pointer = zeros(12,1);
-
-            I = 64;
-            for i = 1:12
+            if is_u64
+                I = 120;
+                step_I = 40;
+                off1 = 9:16;
+                off2 = 17:18;
+                off3 = 25:32;
+                off4 = 33:34;
+                var_type = 'uint64';
+            else
+                I = 64;
+                step_I = 20;
+                off1 = 5:8;
+                off2 = 9:10;
+                off3 = 13:16;
+                off4 = 17:18;
+                var_type = 'uint32';
+            end
+            for i = 1:N_SUBS
                 sigs(i) = typecast(bytes(I+1:I+4),'uint32');
-
                 switch sigs(i)
                     case 4143380214 %column-size subheader
                         names{i} = 'column-size subheader';
@@ -58,9 +91,9 @@ classdef signature_counts_subheader < handle
                     case 4294966272
                         names{i} = 'signature subheader';
                     case 4294967289
-                        names{i} = 'column WTF3'; 
+                        names{i} = 'column WTF3';
                     case 4294967290
-                        names{i} = 'column WTF2';    
+                        names{i} = 'column WTF2';
                     case 4294967291
                         names{i} = 'column WTF';
                     case 4294967292
@@ -77,20 +110,25 @@ classdef signature_counts_subheader < handle
                         error('Unrecognized header')
                 end
 
-                p_first_appear(i) = double(typecast(bytes(I+5:I+8),'uint32'));
-                p_first_pointer(i) = double(typecast(bytes(I+9:I+10),'uint16'));
-                p_last_appear(i) = double(typecast(bytes(I+13:I+16),'uint32'));
-                p_last_pointer(i) = double(typecast(bytes(I+17:I+18),'uint16'));
-                I = I + 20;
+                p_first_appear(i) = double(typecast(bytes(I+off1),var_type));
+                p_first_pointer(i) = double(typecast(bytes(I+off2),'uint16'));
+
+                %FORM_DOC: I think this is n_pages because it is NOT last
+                %page
+                n_pages(i) = double(typecast(bytes(I+off3),var_type));
+                p_last_pointer(i) = double(typecast(bytes(I+off4),'uint16'));
+                I = I + step_I;
             end
+
 
             obj.signatures = sigs;
             obj.subheader_names = names;
             obj.page_first_appear = p_first_appear;
             obj.page_first_pointer = p_first_pointer;
-            obj.page_last_appear = p_last_appear;
+            %ASSUMPTION ...
+            obj.page_last_appear = p_first_appear + n_pages-1;
             obj.page_last_pointer = p_last_pointer;
-            obj.is_multi_page = p_first_appear ~= p_last_appear;
+            obj.is_multi_page = p_first_appear ~= n_pages;
         end
     end
 end

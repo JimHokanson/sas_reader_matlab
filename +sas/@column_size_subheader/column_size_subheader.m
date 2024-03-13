@@ -5,24 +5,23 @@ classdef column_size_subheader < handle
 
     properties
         n_columns
+        unknown9
     end
-
-    %{
-    col_size <- get_subhs(subhs, SUBH_COLSIZE)
-    if(length(col_size) != 1)
-        stop(paste("found", length(col_size),
-            "column size subheaders where 1 expected", BUGREPORT))
-    col_size <- col_size[[1]]
-    col_count_6  <- read_int(col_size$raw,
-                             if(u64) 8 else 4,
-                             if(u64) 8 else 4)
-    col_count    <- col_count_6
-
-    %}
 
     methods
         function obj = column_size_subheader(bytes,is_u64)
-            obj.n_columns = double(typecast(bytes(5:8),'uint32'));
+
+            %1:4  1:8  - signature
+            %5:8  9:16 - n_columns
+            %9:12 17:24
+
+            if is_u64
+                obj.n_columns = double(typecast(bytes(9:16),'uint64'));
+                obj.unknown9 = bytes(17:24);
+            else
+                obj.n_columns = double(typecast(bytes(5:8),'uint32'));
+                obj.unknown9 = bytes(9:12);
+            end
         end
     end
 end

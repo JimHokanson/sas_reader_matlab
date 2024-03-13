@@ -2,85 +2,57 @@ classdef header < handle
     %
     %   Class:
     %   sas.header
+    %
+    %   See Also
+    %   --------
+    %   sas.row_size_subheader
+    %   sas.column_attributes
+    %   sas.column_size_subheader
+    %   sas.column_format_subheader
+    %   sas.signature_counts_subheader
+    %
 
     properties
         start_position
 
         %1:32
         magic_number
-        
-        %33
-        a2  % 4 if b33 == 51, else 0
-        b33_a2 %byte 33 (from which a2 is derived)
-        %computed
-        is_u64 %if a2 == 4
 
-        %34:35
-        unknown34   
-        unknown37  
+        %33
+        a2     %4 if b33 == 51, else 0
+        b33_a2 %byte 33 (from which a2 is derived)
+        is_u64 %if a2 == 4, computed
+
+        unknown34  %34:35
+        unknown37
         unknown39
-        unknown41
+        unknown41  %41:70 Lots of non-zero numbers
         unknown72
         unknown125
+        unknown289
 
-        %36
-        a1
-        pad1
+        a1  %36
         b36_a1
-
-        
-        
-        %37
-        %unknown37
-        
-
-        %38
-        is_little_endian
-        
-
-        %39
-        %unknown39
-
-        %40
-        %FORM_DOC: renamed from os_type
-        file_format
-
-        %41
-        %unknown41
-
-        %71
+        %unknown37 %37
+        is_little_endian %38
+        %unknown39  %39
+        file_format %40, %FORM_DOC: renamed from os_type
+        %unknown41  %41:70
         %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas.c#L45
-        %
-        %FORM_DOC: WizardMac is saying only 1 byte, not 2
-        character_encoding_raw
+        character_encoding_raw  %71, FORM_DOC: WizardMac is saying only 1 byte, not 2
+        character_encoding_name %computed
+        %unknown72  %72:84
+        file_type   %85:92, Should = 'SAS FILE'
+        table_name  %93:124
+        %unknown125 %125:156
+        file_info %157:164
 
-        %computed
-        character_encoding_name
-
-        %72:84
-        %unknown72
-
-        %85:92
-        file_type %Should = 'SAS FILE'
-
-        %93:124
-        table_name
-
-        %125:156
-        %unknown125
-
-        %157:164
-        file_info
-
-        %Format - 
-        creation_time_raw
-        modification_time_raw
+        creation_time_raw       %165+a1:172+a1
+        modification_time_raw   %173+a1:180+a1
         creation_time_diff
         modification_time_diff
-        creation_time_datenum
-        creation_time_datestr
-        modification_time_datenum
-        modification_time_datestr
+        creation_time
+        modification_time
 
         header_length
         page_length
@@ -90,56 +62,10 @@ classdef header < handle
         os_version_number
         os_maker
         os_name
+
+        %329:336
+        timestamp3
     end
-
-
-    %{
-    readstat_error_t sas_read_header(readstat_io_t *io, sas_header_info_t *ctx, readstat_error_handler error_handler, void *user_ctx)
-
-    retval = sas_read_header(io, hinfo, ctx->handle.error, user_ctx)) != READSTAT_OK
-
-    ctx:
-    typedef struct sas_header_start_s {
-        unsigned char magic[32];           1:32     
-        unsigned char a2;                  33
-        unsigned char mystery1[2];         34:35
-        unsigned char a1;                  36 
-        unsigned char mystery2[1];         37 
-        unsigned char endian;              38
-        unsigned char mystery3[1];         39 
-        char          file_format;         40
-        unsigned char mystery4[30];        41:70 
-        unsigned char encoding;            71     
-        unsigned char mystery5[13];        72:84 
-        char          file_type[8];        85:92  
-        char          table_name[32];      93:124
-        unsigned char mystery6[32];        125:156
-        char          file_info[8];        157:
-    } sas_header_start_t;
-
-    hinfo
-    ctx:
-        typedef struct sas_header_info_s {
-            int      little_endian;
-            int      u64;
-            int      vendor;
-            int      major_version;
-            int      minor_version;
-            int      revision;
-            int      pad1;
-            int64_t  page_size;
-            int64_t  page_header_size;
-            int64_t  subheader_pointer_size;
-            int64_t  page_count;
-            int64_t  header_size;
-            time_t   creation_time;
-            time_t   modification_time;
-            char     table_name[32];
-            char     file_label[256];
-            char    *encoding;
-        } sas_header_info_t;
-    
-    %}
 
     methods
         function obj = header(fid)
@@ -148,6 +74,8 @@ classdef header < handle
 
             %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas.c#L161
 
+            %Offsets vary by a1 and a2, not by u64 vs not
+            %---------------------------
             %1:32    : magic number
             %33      : a2
             %34:35     unknown1
@@ -155,7 +83,7 @@ classdef header < handle
             %37      : unknown2
             %38      : endian-ness
             %          - 0 big
-            %          - 1 little 
+            %          - 1 little
             %39      : unknown3
             %40      : os_type
             %          - 1 - unix
@@ -167,16 +95,17 @@ classdef header < handle
 
 
             obj.start_position = ftell(fid);
-            %ASSUMPTION: Minimum length is 1024 
+            %ASSUMPTION: Minimum length is 1024
+            %*** FREAD ***
             bytes = fread(fid,1024,"*uint8")';
 
             obj.magic_number = bytes(1:32);
-            
+
             obj.b33_a2 = bytes(33);
             %I'm seeing 34, not 51, why????
             obj.a2 = 4*(bytes(33) == 51);
             obj.is_u64 = obj.a2 == 4;
-            
+
             obj.unknown34 = bytes(34:35);
             obj.unknown37 = bytes(37);
             obj.unknown39 = bytes(39);
@@ -189,6 +118,9 @@ classdef header < handle
             obj.b36_a1 = bytes(36);
 
             obj.is_little_endian = bytes(38) == 1;
+            if ~obj.is_little_endian
+                error('big endian is unsupported')
+            end
             if bytes(40) == 1
                 obj.file_format = 'unix';
             else
@@ -198,40 +130,204 @@ classdef header < handle
             %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas.c#L45
             %obj.character_encoding_raw = typecast(bytes(71:72),'int16');
             obj.character_encoding_raw = bytes(71);
+            switch obj.character_encoding_raw
+                case 0
+                    name = 'US-ASCII';
+                case 20
+                    name = "UTF-8";
+                case 28
+                    name = 'US-ASCII';
+                case 29
+                    name = "ISO-8859-1";
+                case 30
+                    name = "ISO-8859-2";
+                case 31
+                    name = "ISO-8859-3";
+                case 32
+                    name = "ISO-8859-4";
+                case 33
+                    name = "ISO-8859-5";
+                case 34
+                    name = "ISO-8859-6";
+                case 35
+                    name = "ISO-8859-7";
+                case 36
+                    name = "ISO-8859-8";
+                case 37
+                    name = "ISO-8859-9";
+                case 39
+                    name = "ISO-8859-11";
+                case 40
+                    name = "ISO-8859-15";
+                case 41
+                    name = "CP437";
+                case 42
+                    name = "CP850";
+                case 43
+                    name = "CP852";
+                case 44
+                    name = "CP857";
+                case 45
+                    name = "CP858";
+                case 46
+                    name = "CP862";
+                case 47
+                    name = "CP864";
+                case 48
+                    name = "CP865";
+                case 49
+                    name = "CP866";
+                case 50
+                    name = "CP869";
+                case 51
+                    name = "CP874";
+                case 52
+                    name = "CP921";
+                case 53
+                    name = "CP922";
+                case 54
+                    name = "CP1129";
+                case 55
+                    name = "CP720";
+                case 56
+                    name = "CP737";
+                case 57
+                    name = "CP775";
+                case 58
+                    name = "CP860";
+                case 59
+                    name = "CP863";
+                case 60
+                    name = "WINDOWS-1250";
+                case 61
+                    name = "WINDOWS-1251";
+                case 62
+                    name = "WINDOWS-1252";
+                case 63
+                    name = "WINDOWS-1253";
+                case 64
+                    name = "WINDOWS-1254";
+                case 65
+                    name = "WINDOWS-1255";
+                case 66
+                    name = "WINDOWS-1256";
+                case 67
+                    name = "WINDOWS-1257";
+                case 68
+                    name = "WINDOWS-1258";
+                case 69
+                    name = "MACROMAN";
+                case 70
+                    name = "MACARABIC";
+                case 71
+                    name = "MACHEBREW";
+                case 72
+                    name = "MACGREEK";
+                case 73
+                    name = "MACTHAI";
+                case 75
+                    name = "MACTURKISH";
+                case 76
+                    name = "MACUKRAINE";
+                case 118
+                    name = "CP950";
+                case 119
+                    name = "EUC-TW";
+                case 123
+                    name = "BIG-5";
+                case 125
+                    name = "GB18030"; % "euc-cn" in SAS
+                case 126
+                    name = "WINDOWS-936"; % "zwin"
+                case 128
+                    name = "CP1381"; % "zpce"
+                case 134
+                    name = "EUC-JP";
+                case 136
+                    name = "CP949";
+                case 137
+                    name = "CP942";
+                case 138
+                    name = "CP932"; % "shift-jis" in SAS
+                case 140
+                    name = "EUC-KR";
+                case 141
+                    name = "CP949"; % "kpce"
+                case 142
+                    name = "CP949"; % "kwin"
+                case 163
+                    name = "MACICELAND";
+                case 167
+                    name = "ISO-2022-JP";
+                case 168
+                    name = "ISO-2022-KR";
+                case 169
+                    name = "ISO-2022-CN";
+                case 172
+                    name = "ISO-2022-CN-EXT";
+                case 204
+                    name = 'US-ASCII'; % "any" in SAS
+                case 205
+                    name = "GB18030";
+                case 227
+                    name = "ISO-8859-14";
+                case 242
+                    name = "ISO-8859-13";
+                case 245
+                    name = "MACCROATIAN";
+                case 246
+                    name = "MACCYRILLIC";
+                case 247
+                    name = "MACROMANIA";
+                case 248
+                    name = "SHIFT_JISX0213";
+                otherwise
+                    error('Unrecognized option')
+            end
+
+            obj.character_encoding_name = name;
+
 
             obj.file_type = char(bytes(85:92));
             obj.table_name = strtrim(char(bytes(93:124)));
             %unknown125
             obj.file_info = strtrim(char(bytes(157:164)));
-            
+
 
             %Skipping forward by variable amount
-            a12 = obj.a1+obj.a2;
 
+
+            a1 = obj.a1;
 
             %Processing of the times
             %---------------------------------------------
-            obj.creation_time_raw = typecast(bytes(165+a12:172+a12),'double');
-            obj.modification_time_raw = typecast(bytes(173+a12:180+a12),'double');
+            obj.creation_time_raw = typecast(bytes(165+a1:172+a1),'double');
+            obj.modification_time_raw = typecast(bytes(173+a1:180+a1),'double');
             %FORM_DOC
             %- not sure these are documented ...
-            obj.creation_time_diff = typecast(bytes(181+a12:188+a12),'double');
-            obj.modification_time_diff = typecast(bytes(189+a12:196+a12),'double');
+            obj.creation_time_diff = typecast(bytes(181+a1:188+a1),'double');
+            obj.modification_time_diff = typecast(bytes(189+a1:196+a1),'double');
 
-            
-            temp = obj.creation_time_raw - obj.creation_time_diff - (3653 * 86400);
-            obj.creation_time_datenum = h__unixToDatenum(temp);
-            obj.creation_time_datestr = datestr(obj.creation_time_datenum); %#ok<DATST>
+            %dates.sas7bdat
+            %Aug 23, 2020  , 2:54:47
 
-            temp = obj.modification_time_raw - obj.modification_time_diff - (3653 * 86400);
-            obj.modification_time_datenum = h__unixToDatenum(temp);
-            obj.modification_time_datestr = datestr(obj.modification_time_datenum); %#ok<DATST>
+            temp = obj.creation_time_raw - obj.creation_time_diff;
+            obj.creation_time = datetime(1960,1,1) + seconds(temp);
+            temp = obj.modification_time_raw - obj.modification_time_diff;
+            obj.modification_time = datetime(1960,1,1) + seconds(temp);
+
 
             %------------------------------------------
-            obj.header_length = typecast(bytes(197+a12:200+a12),'uint32');
-            obj.page_length = typecast(bytes(201+a12:204+a12),'uint32');
-            obj.page_count = typecast(bytes(205+a12:208+a12),'uint32');
+            obj.header_length = typecast(bytes(197+a1:200+a1),'uint32');
+            obj.page_length = typecast(bytes(201+a1:204+a1),'uint32');
+            if obj.is_u64
+                obj.page_count = typecast(bytes(205+a1:208+a1+obj.a2),'uint64');
+            else
+                obj.page_count = typecast(bytes(205+a1:208+a1),'uint32');
+            end
 
+
+            a12 = obj.a1+obj.a2;
             %209:216
 
             %TODO: Lots missing from here ...
@@ -243,6 +339,15 @@ classdef header < handle
             obj.os_maker = char(bytes(257+a12:272+a12));
             obj.os_name = char(bytes(273+a12:288+a12));
 
+            %There is a signature
+            obj.unknown289 = bytes(289:328);
+
+            obj.timestamp3 = typecast(bytes(329+a12:336+a12),'double');
+
+            %rest seem to be 0
+
+
+            %*** FSEEK ***
             status = fseek(fid,obj.header_length,'bof');
             if status == -1
                 oerror('Unexpected error when seeking to first page')
@@ -252,12 +357,12 @@ classdef header < handle
 end
 
 function out = h_string_clean(str)
-    out = str;
-    out(out == 0) = [];
+out = str;
+out(out == 0) = [];
 end
 
 function matlab_time = h__unixToDatenum(unix_time)
-    SECONDS_IN_DAY = 86400;
-    UNIX_EPOCH = 719529;
-    matlab_time = unix_time./SECONDS_IN_DAY + UNIX_EPOCH; 
+SECONDS_IN_DAY = 86400;
+UNIX_EPOCH = 719529;
+matlab_time = unix_time./SECONDS_IN_DAY + UNIX_EPOCH;
 end
