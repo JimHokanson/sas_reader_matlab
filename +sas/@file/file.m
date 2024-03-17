@@ -282,12 +282,20 @@ classdef file < handle
 
                             d_origin = datetime(1960,1,1);
                             s(i).values = d_origin + days(s(i).values);
+                        case 'MMDDYY'
+                            d_origin = datetime(1960,1,1);
+                            s(i).values = d_origin + days(s(i).values);
+                            %Not correct ...
+                            %temp2 = d_origin + seconds(s(i).values);
+
 
                         case 'TIME'
                             %
                             %   seconds since midnight
                             %
                             %   ?? What to do here?
+                        otherwise
+                            error('Unrecognized format')
 
                     end
                 else
