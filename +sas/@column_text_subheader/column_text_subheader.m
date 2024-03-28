@@ -56,17 +56,24 @@ classdef column_text_subheader
             lcs = row_size_sh.length_creator_software_string;
             lcp = row_size_sh.length_creator_PROC_step_name;
 
+            %JAH: Note somewhere I saw something that said this is all
+            %specified somewhere else, maybe in the main header???
             if all(first8 == 0)
                 %No compression
                 obj.compression_type = 'none';
+                if lcp > 0
+                    keyboard
+                end
             elseif lcs > 0
+                %cbsatocountycrosswalk.sas7bdat
                 obj.compression_type = 'none';
-                keyboard
+                obj.creator_soft_str = strtrim(char(bytes(I:I+lcs-1)));
             elseif char(first8) == "SASYZCRL"
                 obj.compression_type = 'rle';
                 I = I + 8;
                 obj.creator_proc_name = strtrim(char(bytes(I:I+lcp-1)));
             else
+                %FileFromJMP.sas7bdat
                 obj.compression_type = 'binary';
             end
 

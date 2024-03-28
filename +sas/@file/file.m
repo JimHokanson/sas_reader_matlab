@@ -12,6 +12,10 @@ classdef file < handle
     %   https://github.com/BioStatMatt/sas7bdat
     %   https://github.com/pandas-dev/pandas/blob/main/pandas/io/sas/sas7bdat.py
     %   https://github.com/pandas-dev/pandas/blob/main/pandas/io/sas/sas_constants.py
+    %
+    %   C/C++
+    %   -----
+    %   https://github.com/jonashaag/sas7bdat
     %   https://github.com/WizardMac/ReadStat/blob/dev/src/sas/readstat_sas7bdat_read.c
     %
     %   https://bitbucket.org/jaredhobbs/sas7bdat/src/master/
@@ -21,9 +25,8 @@ classdef file < handle
     %   Pandas version:
     %   https://github.com/pandas-dev/pandas/blob/038976ee29ba7594a38d0729071ba5cb73a98133/pandas/io/sas/sas7bdat.py#L4
     %
-    %   Java Impl
+    %   Java Impl, Parso:
     %   https://github.com/epam/parso/blob/master/src/main/java/com/epam/parso/impl/SasFileParser.java
-    %
     %
     %   SAS universal viewer:
     %   https://support.sas.com/downloads/browse.htm?cat=74
@@ -32,14 +35,20 @@ classdef file < handle
     %   https://welcome.oda.sas.com/
 
     properties
+        file_path
         fid
+
+        %sas.header
         header
+
         n_pages
-        first_page
+        p1
         all_pages
         columns
 
         %Subheaders
+        subheaders
+
         row_size_sh
         col_size_sh
         sig_info_sh
@@ -58,15 +67,26 @@ classdef file < handle
         bytes_per_row
 
         has_compression
+
+        last_data_read_parse_time
     end
 
     methods
         function obj = file(file_path)
-            %Open file
+            %
+            %   Loads the file meta data, setting up future data reads
 
+            h_tic = tic;
+            
+            obj.file_path = file_path;
+
+            %Open file
+            %-------------------------------
             %TODO: Determine file size and switch approach
             %on how to read
 
+            %This object supports reading everything into memory
+            %then acts like MATLAB's fid methods
             %fid = sas.fid(file_path);
 
             fid = fopen(file_path,'r');
@@ -74,9 +94,7 @@ classdef file < handle
                 error('Unable to open the specified file:\n%s\n',file_path)
             end
             obj.fid = fid;
-
-            h_tic = tic;
-
+            
             %Header parse
             %-------------------------------------------------
             h = sas.header(fid);
@@ -84,14 +102,16 @@ classdef file < handle
 
             %Meta data parsing (first few pages)
             %-------------------------------------------------
+            obj.subheaders = sas.subheaders(); 
+
             obj.n_pages = h.page_count;
             all_pages = cell(1,obj.n_pages);
 
             data_starts = zeros(1,obj.n_pages);
             data_n_rows = zeros(1,obj.n_pages);
 
-            p = sas.page(fid,h,1);
-            obj.first_page = p;
+            p = sas.page(fid,h,1,obj);
+            obj.p1 = p;
             all_pages{1} = p;
 
             data_starts(1) = p.data_block_start;
@@ -99,8 +119,9 @@ classdef file < handle
 
             %   one_observation.sas7bdat
             %
-            %   Good example where format specificatin spans 3 pages
-            %   - see the    signature subheader
+            %   Above file is good example where format specificatin spans 
+            %   3 pages
+            %   - see the signature subheader
 
             %After the first page, we get any additional meta data pages
             %-----------------------------------------------------------
@@ -108,7 +129,7 @@ classdef file < handle
             if any(p.signature_subheader.page_last_appear > 1)
                 max_page = max(p.signature_subheader.page_last_appear);
                 for i = 2:max_page
-                    p = sas.page(fid,h,i);
+                    p = sas.page(fid,h,i,obj);
                     all_pages{i} = p;
                     data_starts(i) = p.data_block_start;
                     data_n_rows(i) = p.data_block_count;
@@ -168,7 +189,7 @@ classdef file < handle
             %- Note, I'm assuming all meta data is done
             %- Is there a file where they add meta data at the end?
             for i = next_page:obj.n_pages
-                p = sas.page(fid,h,i);
+                p = sas.page(fid,h,i,obj);
                 data_starts(i) = p.data_block_start;
                 data_n_rows(i) = p.data_block_count;
                 all_pages{i} = p;
@@ -190,6 +211,8 @@ classdef file < handle
         end
         function output = readAllData(obj,varargin)
 
+
+            h = tic;
 
             in.output_type = 'table';
             in = sas.sl.in.processVarargin(in,varargin);
@@ -268,8 +291,14 @@ classdef file < handle
                     column_data_bytes = zeros(8,n_rows2,'uint8');
                     column_data_bytes(8-c_widths_m1(i):8,:) = temp_data(I1:I2,:);
                     s(i).values = typecast(column_data_bytes(:),'double');
+
+                    %https://github.com/epam/parso/pull/86
                     switch c_formats{i}
                         case ''
+                        case 'BEST'
+                            %
+                            %do nothing
+
                             %done
                         case 'DATETIME'
                             %
@@ -282,13 +311,29 @@ classdef file < handle
 
                             d_origin = datetime(1960,1,1);
                             s(i).values = d_origin + days(s(i).values);
-                        case 'MMDDYY'
+                        case {'MMDDYY','YYMMDD'}
                             d_origin = datetime(1960,1,1);
                             s(i).values = d_origin + days(s(i).values);
                             %Not correct ...
                             %temp2 = d_origin + seconds(s(i).values);
+                        case 'MINGUO'
+                            %01/01/01 is January 1, 1912
+                            %dates before January 1, 1912 are not valid
+                            %{
+                                  -17532   01/01/01
+                                       0   0049/01/01
+                                   20513   0105/02/09
+                                  110404   0351/04/11
+                            %}
+                            %d_origin = datetime(1912,1,1);
 
-
+                            %https://www.mathworks.com/help/matlab/matlab_oop/built-in-subclasses-with-properties.html
+                            d_origin = datetime(1960,1,1);
+                            wtf = d_origin + days(s(i).values);
+                            %subclasssing datetime not allowed
+                            %would need to create a custom datetime class
+                            %wtf2 = sas.formats.minguo(wtf);
+                            s(i).values = wtf;
                         case 'TIME'
                             %
                             %   seconds since midnight
@@ -332,6 +377,8 @@ classdef file < handle
                     %  because we do this check as well at the top
                     error('Unhandled exception')
             end
+
+            obj.last_data_read_parse_time = toc(h);
 
         end
     end

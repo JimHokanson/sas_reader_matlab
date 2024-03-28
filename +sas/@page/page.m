@@ -4,40 +4,55 @@ classdef page < handle
     %   sas.page
 
     properties
+        %count on which page is being processed, starting at 1
+        page_index
+
+        %Byte position in file from ftell()  0b?
         start_position
+
+        is_u64
+
+        %1:4
         page_id
-        unknown1
+        
+        %TODO: This is no longer completely unknown
+        %- contains info on deleted rows (in part)
+        %bytes 5:B
+        unknown5
 
-        %0 - meta
-        %256 - data
-        %512 - mix
-        %1024 - amd
-        %16384 - meta
-        %-28672 - comp
-
-
-        %????????
+        %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileConstants.java#L553
+        %
+        %   TODO: Update ...
+        %
+        %Numeric value:
+        % 0 - meta, compressed data
+        % 128 - meta, compressed data, deleted rows
+        % 256 - data only
+        %
         page_type
-        page_name
+        
+        %The following properties are based on the page_type value
+        
+        has_meta
+        has_uncompressed_data
+        has_compressed_data
+        has_deleted_rows
 
-        contains_uncompressed_row_data
-        contains_compressed_row_data
-
-        %??? - This appears to also include subheader counts
         data_block_count %BC
         data_block_start
 
         unknown2
-        subheader_pointer_count %SC
+        n_subheaders %SC
+        n_bytes_sub_pointer %SL
+
+        %Set true when the last subheader is deleted
+        %due to truncation flag (or other reasons)
         sub_count_short = false
 
-        % s.offsets = sub_offsets;
-        % s.lengths = sub_length;
-        % s.comp_flags = sub_comp_flag;
-        % s.type = sub_type;
-        subheader_pointers
+        %sas.subheader_pointers
+        subheader_pointers 
 
-        sub_headers
+        all_sub_headers
 
         row_size_subheader
         col_size_subheader
@@ -53,15 +68,17 @@ classdef page < handle
 
         full_bytes
         comp_data_rows = {}
+        delete_mask
         has_compressed = false
     end
 
 
     %{
-    Layout
-    -----------------------------
+    Rough Layout (u32)
+    ---------------------------------
     %1:24 - fixed
     %25:X - subheader pointers
+    %
     %     - spacing
     %     - data
     %     - headers
@@ -70,27 +87,98 @@ classdef page < handle
     %}
 
     methods
-        function obj = page(fid,h,page_index)
+        function obj = page(fid,h,page_index,parent)
             %
             %   h : sas.header
             %
-            obj.start_position = ftell(fid);
 
+            %Might remove eventually ...
+            obj.page_index = page_index;
+
+            %Initial header processing
+            %----------------------------------------------
+            s = obj.processPageHeader(fid,h);
+            B = s.B;
+            SC = obj.n_subheaders;
+            SL = obj.n_bytes_sub_pointer; %subheader byte length
+            n_bytes_initial = s.n_bytes_initial;
+            
+            %Possible early return
+            %---------------------------------------------
+            offset = ceil((B+8+SC*SL)/8)*8;
+            obj.data_block_start = offset + obj.start_position;
+
+            %Processing of the page type
+            %-------------------------------------
+            %TODO: Move into sas.page_type
+            obj.processPageType(); 
+            
+            %TODO: Verify page type assumptions with SC/BC values
+            %
+            %i.e. 
+            %if .has_meta SC > 0
+            %if .compressed SC > 0
+            %etc.   
+
+            %When no subheaders adjust file pointer to next page and exit
+            %------------------------------------------------------------
+            if obj.n_subheaders == 0
+                n_remaining = h.page_length - n_bytes_initial;
+                %*** FSEEK ***
+                status = fseek(fid,n_remaining,'cof');
+                if status == -1
+                    error('fseek failed')
+                end
+                return
+            end
+
+            %Subpointer info retrieval
+            %----------------------------------------------------------
+            n_bytes_pointers = SC*SL;
+            %*** FREAD ***
+            bytes = fread(fid,n_bytes_pointers,'*uint8')';
+            n_subs = SC;
+            s = sas.subheader_pointers(h.is_u64,n_subs,bytes);
+            obj.subheader_pointers = s;
+
+            %Subheader processing
+            %----------------------------------------------------
+            obj.processSubheaders(fid,h.page_length);
+
+            %Deleted mask
+            %-------------------------------------------
+            obj.processDeletedMask();
+        end
+        function s = processPageHeader(obj,fid,h)
+            %
+            %   This is the first step in the processing ...
+            %   
+            
+            obj.start_position = ftell(fid);
+            obj.is_u64 = h.is_u64;
+
+            s = struct('B',[],'SL',[],'SC',[],'n_bytes_initial',[]);
             if h.is_u64
                 B = 32;
-                SL = 24; %subpointer length
-                n_bytes_initial = 40;
+                s.B = B;
+                s.SL = 24; %subpointer length
+                s.n_bytes_initial = 40;
             else
                 B = 16;
-                SL = 12;
-                n_bytes_initial = 24;
+                s.B = B;
+                s.SL = 12;
+                s.n_bytes_initial = 24;
             end
+
+            obj.n_bytes_sub_pointer = s.SL;
 
             %Read and process the first few bytes
             %----------------------------------------------------
             %*** FREAD ***
-            bytes = fread(fid,n_bytes_initial,'*uint8')';
+            bytes = fread(fid,s.n_bytes_initial,'*uint8')';
             %1:4             <- signature
+            %
+            %TODO: Update, contains deleted ...
             %5:16     5:32   <- unknown1
             %17:18   33:34   <- page type (start is B+1)
             %19:20   35:36   <- block count - BC
@@ -102,7 +190,9 @@ classdef page < handle
             %                <- subheader data or filler
 
             obj.page_id = bytes(1:4);
-            obj.unknown1 = bytes(5:B);
+
+            %TODO: Move deleted marker offset into here ...
+            obj.unknown5 = bytes(5:B);
 
             obj.page_type = double(typecast(bytes(B+1:B+2),'int16'));
 
@@ -110,145 +200,30 @@ classdef page < handle
             obj.data_block_count = double(typecast(bytes(B+3:B+4),'uint16'));
 
             %This seems to be consistently off by 1
-            obj.subheader_pointer_count = double(typecast(bytes(B+5:B+6),'uint16'));
+            %
+            %   Normally the last subheader is truncated as indicated
+            %   by comp_flags == 1
+            obj.n_subheaders = double(typecast(bytes(B+5:B+6),'uint16'));
 
-            obj.data_block_count = obj.data_block_count - obj.subheader_pointer_count;
+            %Remove the 
+            obj.data_block_count = obj.data_block_count - obj.n_subheaders;
 
-            %Why is this off by 1?????
-
-            SC = obj.subheader_pointer_count;
             obj.unknown2 = double(typecast(bytes(B+7:B+8),'uint16'));
+        end
+        function processSubheaders(obj,fid,page_length)
+            %
+            %
+            %   Utilizing the pointer info, process each sub-header. This
+            %   includes information about the row size, column size, as
+            %   well as information about the columns. It may also contain
+            %   compresssed data.
 
-            %{
-            PAGE_META <- 0
-            PAGE_DATA <- 256        #1<<8
-            PAGE_MIX  <- c(512,640) #1<<9,1<<9|1<<7
-            PAGE_AMD  <- 1024       #1<<10
-            PAGE_METC <- 16384      #1<<14 (compressed data)
-            PAGE_COMP <- -28672     #~(1<<14|1<<13|1<<12) 
-            PAGE_MIX_DATA <- c(PAGE_MIX, PAGE_DATA)
-            PAGE_META_MIX_AMD <- c(PAGE_META, PAGE_MIX, PAGE_AMD)
-            PAGE_ANY  <- c(PAGE_META_MIX_AMD, PAGE_DATA, PAGE_METC, PAGE_COMP)
-            %}
+            s = obj.subheader_pointers;
 
-            switch obj.page_type
-                case 0
-                    obj.page_name = 'meta';
-                    obj.contains_uncompressed_row_data = false;
-                    obj.contains_compressed_row_data = true;
-                case 256
-                    obj.page_name = 'data';
-                    obj.contains_uncompressed_row_data = true;
-                    obj.contains_compressed_row_data = false;
-                case 512
-                    obj.page_name = 'mix';
-                    obj.contains_uncompressed_row_data = true;
-                    obj.contains_compressed_row_data = false;
-                case 640
-                    %FORM DOC
-                    %
-                    %date_dd_mm_yyyy_copy.sas7bdat
-                    obj.page_name = 'mix';
-                    obj.contains_uncompressed_row_data = true;
-                    obj.contains_compressed_row_data = false;
-                case 1024
-                    obj.page_name = 'amd';
-                    %question marks for both of these ...
-                    obj.contains_uncompressed_row_data = true;
-                    obj.contains_compressed_row_data = false;
-                case 16384
-                    obj.page_name = 'meta';
-                    obj.contains_uncompressed_row_data = false;
-                    obj.contains_compressed_row_data = true;
-                case -28672
-                    obj.page_name = 'comp';
-                    obj.data_block_count = 0;
-                    %no subheaders
-                    obj.contains_uncompressed_row_data = false;
-                    obj.contains_compressed_row_data = false;
-                    obj.data_block_start = -1;
-                    return
-                otherwise
-                    error('Unrecognized option')
-            end
-
-            %Possible early return
-            %---------------------------------------------
-            offset = ceil((B+8+SC*SL)/8)*8;
-            obj.data_block_start = offset + obj.start_position;
-
-            if SC == 0
-                %n_bytes_initial
-                n_remaining = h.page_length - n_bytes_initial;
-                %*** FSEEK ***
-                status = fseek(fid,n_remaining,'cof');
-                if status == -1
-                    error('fseek failed')
-                end
-                return
-            end
-
-
-            %Subpointer info retrieval
-            %----------------------------------------------------------
-            n_bytes_pointers = SC*SL;
-            %*** FREAD ***
-            bytes = fread(fid,n_bytes_pointers,'*uint8')';
-
-            %Pointer info:
-            %1:4 or 1:8  - offset from page start to subheader
-            %5:8 or 9:16 - length of subheader - QL
-            %               - if zero the subheader can be ignored
-            %9   or 17   - compression flag
-            %                0 - no compression
-            %                1 - truncated (ignore data)
-            %                4 - RLE with control byte
-            %10  or 18 - subheader type (ST)
-            %                0 - Row Size, Column Size, Subheader Counts, Column Format and Label, in Uncompressed file
-            %                1 - Column Text, Column Names, Column Attributes, Column List
-            %                1 - all subheaders (including row data), in Compressed file.
-            %11:12 or 19:24 - zeros - why?? - to flush to 4|8 boundary?
-            if h.is_u64
-                I = 1;
-                n_subs = SC;
-                sub_offsets = zeros(n_subs,1);
-                sub_lengths  = zeros(n_subs,1);
-                sub_comp_flags = zeros(n_subs,1);
-                sub_types = zeros(n_subs,1);
-                for i = 1:n_subs
-                    sub_offsets(i) = typecast(bytes(I:I+7),'uint64');
-                    sub_lengths(i) = typecast(bytes(I+8:I+15),'uint64');
-                    sub_comp_flags(i) = bytes(I+16);
-                    sub_types(i) = bytes(I+17);
-                    I = I + 24;
-                end
-            else
-                I = 1;
-                n_subs = SC;
-                sub_offsets = zeros(n_subs,1);
-                sub_lengths  = zeros(n_subs,1);
-                sub_comp_flags = zeros(n_subs,1);
-                sub_types = zeros(n_subs,1);
-                for i = 1:n_subs
-                    sub_offsets(i) = double(typecast(bytes(I:I+3),'uint32'));
-                    sub_lengths(i) = double(typecast(bytes(I+4:I+7),'uint32'));
-                    sub_comp_flags(i) = bytes(I+8);
-                    %TODO: check this and throw error if not 0
-                    sub_types(i) = bytes(I+9);
-                    I = I + 12;
-
-                    %The final subheader on a page is usually COMP=1, 
-                    %which indicates a truncated row to be ignored; the
-                    %complete data row appears on the next page.
-                end
-            end
-
-            s = struct;
-            s.offsets = sub_offsets;
-            s.lengths = sub_lengths;
-            s.comp_flags = sub_comp_flags;
-            s.type = sub_types;
-            obj.subheader_pointers = s;
+            sub_offsets = s.offsets;
+            sub_lengths = s.lengths;
+            sub_comp_flags = s.comp_flags;
+            sub_types = s.type;
 
             %Processing of the subheaders
             %----------------------------------------------------
@@ -264,7 +239,7 @@ classdef page < handle
             if status == -1
                 error('Unhandled error')
             end
-            bytes = fread(fid,h.page_length,'*uint8')';
+            bytes = fread(fid,page_length,'*uint8')';
             obj.full_bytes = bytes;
 
             %     'F6F6F6F6' - 4143380214 - column-size subheader, n=1?
@@ -285,19 +260,22 @@ classdef page < handle
             %   /* Seen in the wild: FA (unknown), F8 (locale?) */
 
             %This 100 is arbitrary
-            format_headers = cell(1,100);
+
+            n_subs = obj.n_subheaders;
+
+            %Note, this is an overallocation but that's probably fine
+            format_headers = cell(1,n_subs);
             format_I = 0;
 
-            col_text_headers = {};
-            col_attr_headers = {};
-            col_name_headers = {};
-            col_list_headers = {};
+            col_text_h = {};
+            col_attr_h = {};
+            col_name_h = {};
+            col_list_h = {};
 
             row_size_subheader_set = false;
             column_size_subheader_set = false;
             signature_subheader_set = false;
-
-            is_u64 = h.is_u64;
+            
             sub_headers = cell(1,n_subs);
             sigs = zeros(1,n_subs);
             for i = 1:n_subs
@@ -313,179 +291,306 @@ classdef page < handle
                     %Not sure why this is happening
                     if i == n_subs
                         obj.sub_count_short = true;
-                        obj.subheader_pointer_count = n_subs-1;
+                        obj.n_subheaders = n_subs-1;
                         sub_headers(end) = [];
                         break
                     else
                         error('Unhandled case')
                     end
                 end
+
+                %Compressed data in header
+                %------------------------------------
                 if sub_comp_flags(i) == 4
                     obj.has_compressed = true;
-                    b3 = [];
-                    j = 1;
-                    done = false;
-                    all_cmds = [];
-                    while ~done
-                        next_control = b2(j);
-                        %upper 4 command, lower 4 length
-                        cmd = bitshift(next_control,-4);
-                        all_cmds = [all_cmds cmd];
-                        len = double(bitand(next_control,15));
-
-                        %https://github.com/WizardMac/ReadStat/blob/dev/src/sas/readstat_sas_rle.c#L43
-                        %https://github.com/pandas-dev/pandas/blob/dc19148bf7197a928a129b1d1679b1445a7ea7c7/pandas/_libs/sas.pyx#L61
-                        switch cmd
-                            case 0 %SAS_RLE_COMMAND_COPY64
-                                keyboard
-                            case 1 %SAS_RLE_COMMAND_COPY64_PLUS_4096
-                                keyboard
-                            case 2 %SAS_RLE_COMMAND_COPY96
-                                keyboard
-                            case 3
-                                error('Unrecognized option')
-                            case 4 %SAS_RLE_COMMAND_INSERT_BYTE18
-                                n_bytes = 18 + len*256;
-                                b3 = [b3 repelem(b2(j+1),1,n_bytes)];
-                                j = j + 2;
-                                keyboard
-                            case 5 %SAS_RLE_COMMAND_INSERT_AT17
-                                n_bytes = 17 + len*256;
-                                b3 = [b3 repelem(uint8('@'),1,n_bytes)];
-                                j = j + 1;
-                            case 6 %SAS_RLE_COMMAND_INSERT_BLANK17
-                                n_bytes = 17+len*256;
-                                b3 = [b3 repelem(uint8(' '),1,n_bytes)];
-                                j = j + 1;
-                            case 7 %SAS_RLE_COMMAND_INSERT_ZERO17
-                                n_bytes = 17+len*256;
-                                b3 = [b3 repelem(uint8(0),1,n_bytes)];
-                                j = j + 1;
-                            case 8 %SAS_RLE_COMMAND_COPY1
-                                %copy next X
-                                n_bytes = len + 1;
-                                b3 = [b3 b2(j+1:j+n_bytes)];
-                                j = j + n_bytes + 1;
-                            case 9 %SAS_RLE_COMMAND_COPY17
-                                n_bytes = len + 17;
-                                b3 = [b3 b2(j+1:j+n_bytes)];
-                                j = j + n_bytes + 1;
-                            case 10 %SAS_RLE_COMMAND_COPY33
-                                n_bytes = len + 33;
-                                b3 = [b3 b2(j+1:j+n_bytes)];
-                                j = j + n_bytes + 1;
-                            case 11 %SAS_RLE_COMMAND_COPY49
-                                n_bytes = len + 49;
-                                b3 = [b3 b2(j+1:j+n_bytes)];
-                                j = j + n_bytes + 1;
-                            case 12 %SAS_RLE_COMMAND_INSERT_BYTE3
-                                n_bytes = len + 3;
-                                b3 = [b3 repelem(b2(j+1),1,n_bytes)];
-                                j = j + 1;
-                            case 13 %SAS_RLE_COMMAND_INSERT_AT2
-                                n_bytes = len + 2;
-                                b3 = [b3 repelem(uint8('@'),1,n_bytes)];
-                                j = j + 1;
-                            case 14 %SAS_RLE_COMMAND_INSERT_BLANK2
-                                n_bytes = len + 2;
-                                b3 = [b3 repelem(uint8(32),1,n_bytes)];
-                                j = j + 1;
-                            case 15 %SAS_RLE_COMMAND_INSERT_ZERO2
-                                n_bytes = len + 2;
-                                b3 = [b3 repelem(uint8(0),1,n_bytes)];
-                                j = j + 1;
-                            otherwise
-                                error('Unrecognized option')
-                        end
-                        done = j > length(b2);
-                    end
-                    obj.comp_data_rows{end+1} = b3';
+                    obj.comp_data_rows{end+1} = sas.utils.extractCompressed(b2);
                     continue
                 end
 
+                %Parso suggests that the first 4 bytes for u64 might be 
+                %0 followed by the signature ...
                 header_signature = typecast(bytes(offset:offset+3),'uint32');
+            
+
                 sigs(i) = header_signature;
                 %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas7bdat_read.c#L626
+                %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileParser.java#L87
                 switch header_signature
                     case 0
                         %seen in one_observation.sas7bdat
                         if i == n_subs
                             obj.sub_count_short = true;
-                            obj.subheader_pointer_count = n_subs-1;
+                            obj.n_subheaders = n_subs-1;
                             sub_headers(end) = [];
                             break
                         else
-                            error('Unhandled case')
+
+                            % % % if (sasFileProperties.isCompressed() && subheaderIndex == null && ...
+                            %               (compression == COMPRESSED_SUBHEADER_ID || compression == 0) 
+                            %                   && type == COMPRESSED_SUBHEADER_TYPE) {
+                            % % %          subheaderIndex = SubheaderIndexes.DATA_SUBHEADER_INDEX;
+                            % % %      }
+
+                            %SASYZCRL
+                            %
+                            %dates_binary.sas7bdat
+                            keyboard
+                            obj.sub_count_short = true;
+                            obj.n_subheaders = i - 1;
+                            sub_headers(i:end) = [];
+                            break
+                            
+                            %error('Unhandled case')
                         end
                     case 4143380214 %column-size subheader
                         %-----------------------------------------
                         if column_size_subheader_set
                             error('Assumption violated')
                         end
-                        obj.col_size_subheader = sas.column_size_subheader(b2,is_u64);
+                        obj.col_size_subheader = sas.column_size_subheader(b2,obj.is_u64);
                         sub_headers{i} = obj.col_size_subheader;
                         column_size_subheader_set = true;
+
+                        s.logSectionType(i,'col-size');
                     case 4160223223 %row-size subheader
                         %-----------------------------------------
                         if row_size_subheader_set
                             error('Assumption violated')
                         end
-                        obj.row_size_subheader = sas.row_size_subheader(b2,is_u64);
+                        obj.row_size_subheader = sas.row_size_subheader(b2,obj.is_u64);
                         sub_headers{i} = obj.row_size_subheader;
                         row_size_subheader_set = true;
+                        s.logSectionType(i,'row-size');
                     case 4294966270  %column-format subheader
                         %-----------------------------------------
                         %n = 1 per column
                         %- info stored in ???
                         format_I = format_I + 1;
-                        sub_headers{i} = sas.column_format_subheader(b2,is_u64);
+                        sub_headers{i} = sas.column_format_subheader(b2,obj.is_u64);
                         format_headers(format_I) = sub_headers(i);
                         %- format
                         %- label
+                        s.logSectionType(i,'col-format');
                     case 4294966272
                         %-----------------------------------------
                         if signature_subheader_set
                             error('Assumption violated')
                         end
-                        obj.signature_subheader = sas.signature_counts_subheader(b2,is_u64);
+                        obj.signature_subheader = sas.signature_counts_subheader(b2,obj.is_u64);
                         sub_headers{i} = obj.signature_subheader;
                         %When a particular subheader first and last
                         %appears
                         signature_subheader_set = true;
+                        s.logSectionType(i,'sig-counts');
                     case 4294967292
                         %-----------------------------------------
-                        sub_headers{i} = sas.column_attributes_subheader(b2,is_u64);
-                        col_attr_headers(end+1) = sub_headers(i); %#ok<AGROW>
+                        sub_headers{i} = sas.column_attributes_subheader(b2,obj.is_u64);
+                        col_attr_h(end+1) = sub_headers(i); %#ok<AGROW>
                         %The column attribute subheader holds
                         %information regarding the column offsets
                         %within a data row, the column widths, and the
                         %column types (either numeric or character).
+                        s.logSectionType(i,'col-attr');
                     case 4294967293
-                        sub_headers{i} = sas.column_text_subheader(b2,is_u64,obj.row_size_subheader);
-                        col_text_headers(end+1) = sub_headers(i); %#ok<AGROW>
+                        sub_headers{i} = sas.column_text_subheader(b2,obj.is_u64,obj.row_size_subheader);
+                        col_text_h(end+1) = sub_headers(i); %#ok<AGROW>
                         %text but not linked to any column
+                        s.logSectionType(i,'col-text');
                     case 4294967294
-                        sub_headers{i} = sas.column_list_subheader(b2,is_u64);
-                        col_list_headers(end+1) = sub_headers(i); %#ok<AGROW>
+                        sub_headers{i} = sas.column_list_subheader(b2,obj.is_u64);
+                        col_list_h(end+1) = sub_headers(i); %#ok<AGROW>
                         %Unclear what this is ...
+                        s.logSectionType(i,'col-list');
                     case 4294967295
-                        sub_headers{i} = sas.column_name_subheader(b2,is_u64);
-                        col_name_headers(end+1) = sub_headers(i); %#ok<AGROW>
+                        sub_headers{i} = sas.column_name_subheader(b2,obj.is_u64);
+                        col_name_h(end+1) = sub_headers(i); %#ok<AGROW>
+                        s.logSectionType(i,'col-name');
                     otherwise
                         error('Unrecognized header')
                 end
             end
 
-            obj.sub_headers = sub_headers;
+            obj.all_sub_headers = sub_headers;
 
             obj.format_subheaders = [format_headers{1:format_I}];
 
-            obj.col_text_headers = [col_text_headers{:}];
-            obj.col_attr_headers = [col_attr_headers{:}];
-            obj.col_name_headers = [col_name_headers{:}];
-            obj.col_list_headers = [col_list_headers{:}];
+            obj.col_text_headers = [col_text_h{:}];
+            obj.col_attr_headers = [col_attr_h{:}];
+            obj.col_name_headers = [col_name_h{:}];
+            obj.col_list_headers = [col_list_h{:}];
 
+        end
+        function processDeletedMask(obj)
 
+            %   Files with deleted entries:
+            %   - date_dd_mm_yyyy_copy.sas7bdat
+            %   - 
+
+            
+
+            %https://github.com/troels/pandas/blob/fcb169919b93b95e22630a23817dbcf24e0e7cda/pandas/io/sas/sas7bdat.py
+            %
+            if obj.has_deleted_rows
+
+                fprintf('wtf batman\n')
+
+                bytes = obj.full_bytes;
+                SL = obj.n_bytes_sub_pointer;
+                SC = obj.n_subheaders;
+
+                %12,24
+                if obj.is_u64
+                    deleted_pointer = typecast(bytes(25:28),'uint32');
+                    bit_offset = 40; %B+8
+                else
+                    deleted_pointer = typecast(bytes(13:16),'uint32');
+                    bit_offset = 24; %B+8
+                end
+                subheader_pointers_offset = 8;
+
+                BC = obj.data_block_count;
+
+                row_length = obj.row_size_subheader.row_length;
+
+                %This awkward math comes from parso, might simplify
+                %eventually ...
+                align_correction = mod(bit_offset + subheader_pointers_offset + SC*SL,8);
+
+                deleted_map_offset = bit_offset + deleted_pointer + align_correction + SC * SL + BC*row_length + 1;
+
+                %1 bit used per row, so divide by 8 (8 bits per byte)
+                n_bytes_read = ceil(BC/8);
+
+                delete_bitmap_bytes = bytes(deleted_map_offset:deleted_map_offset+n_bytes_read-1);
+
+                %Note, the order is reversed within a byte
+                %byte 0, bit 7 - 1st row
+                %byte 0, bit 6 - 2nd row
+                %
+                %...
+                %byte 1, bit 7 - 9th row
+                %etc.
+                
+                temp = arrayfun(@(x) bitget(x,8:-1:1),delete_bitmap_bytes,'un',0);
+                obj.delete_mask = [temp{:}];
+
+                %PARSO code
+                %---------------------
+                %{
+                    deletedPointerOffset = PAGE_DELETED_POINTER_OFFSET_X86; //12
+                    subheaderPointerLength = SUBHEADER_POINTER_LENGTH_X86; //12
+                    bitOffset = PAGE_BIT_OFFSET_X86 + 8; //= 16 + 8 = 24
+                    
+                    int alignCorrection = (bitOffset + SUBHEADER_POINTERS_OFFSET + currentPageSubheadersCount
+                            * subheaderPointerLength) % BITS_IN_BYTE;
+                    List<byte[]> vars = getBytesFromFile(new Long[] {deletedPointerOffset},
+                            new Integer[] {PAGE_DELETED_POINTER_LENGTH});
+            
+                    long currentPageDeletedPointer = bytesToInt(vars.get(0));
+                    long deletedMapOffset = bitOffset + currentPageDeletedPointer + alignCorrection
+                            + (currentPageSubheadersCount * subheaderPointerLength)
+                            + ((currentPageBlockCount - currentPageSubheadersCount) * sasFileProperties.getRowLength());
+                    List<byte[]> bytes = getBytesFromFile(new Long[] {deletedMapOffset},
+                        new Integer[] {(int) Math.ceil((currentPageBlockCount - currentPageSubheadersCount) / 8.0)});
+            
+                    byte[] x = bytes.get(0);
+                    for (byte b : x) {
+                        deletedMarkers += String.format("%8s", Integer.toString(b & 0xFF, 2)).replace(" ", "0");
+                    }
+                %}
+        
+            end
+        end
+        
+        function processPageType(obj)
+            %
+            %
+            %   At this point the page type is specified. Based on the
+            %   value we populate the following properties
+            %
+            %       .has_meta
+            %       .has_uncompressed_data
+            %       .has_compressed_data
+            %       .has_deleted_rows
+
+            %Good ref to work off of
+            %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileConstants.java#L553
+            switch obj.page_type
+                case 0
+                    %meta
+                    obj.has_meta = true;
+                    obj.has_uncompressed_data = false;
+                    obj.has_compressed_data = true;
+                    obj.has_deleted_rows = false;
+                case 128
+                    %FORM DOC
+                    %seen in: q_del_pandas.sas7bdat
+                    %obj.page_name = 'data';
+                    obj.has_meta = true;
+                    obj.has_uncompressed_data = false;
+                    obj.has_compressed_data = true;
+                    obj.has_deleted_rows = true;
+                case {256 384}
+                    %767543210 - bit_ids
+                    %100000000 - bit_values
+                    %obj.page_name = 'data';
+                    obj.has_meta = false;
+                    obj.has_uncompressed_data = true;
+                    obj.has_compressed_data = false;
+                    obj.has_deleted_rows = false;
+                case 512
+                    %8767543210 
+                    %1000000000
+                    %obj.page_name = 'mix';
+                    obj.has_meta = true;
+                    obj.has_uncompressed_data = true;
+                    obj.has_compressed_data = false;
+                    obj.has_deleted_rows = false;
+                case 640
+                    %FORM DOC
+                    %
+                    %   - date_dd_mm_yyyy_copy.sas7bdat
+                    %
+                    %8767543210
+                    %1010000000
+                    %obj.page_name = 'mix';
+                    %
+                    %   uncompressed with deleted rows
+                    obj.has_meta = true;
+                    obj.has_uncompressed_data = true;
+                    obj.has_compressed_data = false;
+                    obj.has_deleted_rows = true;
+                case 1024
+                    %98767543210 - bit_ids
+                    %10000000000 - bit_values
+                    %
+                    %obj.page_name = 'amd';
+                    %question marks for both of these ...
+                    error('Unhandled case')
+                case 16384
+                    %321098767543210 - bit_ids
+                    %100000000000000 - bit_values
+                    %
+                    %obj.page_name = 'meta';
+
+                    obj.has_meta = true;
+                    obj.has_uncompressed_data = false;
+                    obj.has_compressed_data = true;
+                    obj.has_deleted_rows = false;
+                case -28672
+                    %q_pandas.sas7bdat
+                    %obj.page_name = 'comp';
+                    %error('Unhandled case')
+
+                    %TODO: Is this correct?
+
+                    obj.has_meta = false;
+                    obj.has_uncompressed_data = true;
+                    obj.has_compressed_data = false;
+                    obj.has_deleted_rows = false;
+                otherwise
+                    error('Unrecognized option')
+            end
         end
     end
 end

@@ -3,6 +3,8 @@ classdef header < handle
     %   Class:
     %   sas.header
     %
+    %   This is the main header of the file.
+    %
     %   See Also
     %   --------
     %   sas.row_size_subheader
@@ -119,7 +121,7 @@ classdef header < handle
 
             obj.is_little_endian = bytes(38) == 1;
             if ~obj.is_little_endian
-                error('big endian is unsupported')
+                error('sas_reader:big_endian','big endian is unsupported')
             end
             if bytes(40) == 1
                 obj.file_format = 'unix';

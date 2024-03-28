@@ -32,6 +32,8 @@ classdef row_size_subheader < handle
 
 
         total_row_count %25:28, TRC
+
+        rows_deleted_count
         
         %number of Column Format and Label Subheader on first page
         ncfl1 %37:40
@@ -89,6 +91,7 @@ classdef row_size_subheader < handle
                 %TODO: Decided on strategy for uint64 vs double here
                 obj.row_length = double(typecast(bytes(41:48),'uint64'));
                 obj.total_row_count = double(typecast(bytes(49:56),'uint64'));
+                obj.rows_deleted_count = double(typecast(bytes(57:64),'uint64'));
                 obj.unknown29 = bytes(57:72);
                 obj.ncfl1 = double(typecast(bytes(73:80),'uint64'));
                 obj.ncfl2 = double(typecast(bytes(81:88),'uint64'));
@@ -106,6 +109,7 @@ classdef row_size_subheader < handle
                 obj.unknown5 = bytes(5:20);
                 obj.row_length = double(typecast(bytes(21:24),'uint32'));
                 obj.total_row_count = double(typecast(bytes(25:28),'uint32'));
+                obj.rows_deleted_count = double(typecast(bytes(29:32),'uint32'));
                 obj.unknown29 = bytes(29:36);
                 obj.ncfl1 = double(typecast(bytes(37:40),'uint32'));
                 obj.ncfl2 = double(typecast(bytes(41:44),'uint32'));
