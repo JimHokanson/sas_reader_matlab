@@ -1,11 +1,15 @@
 function f001_deletedEntriesAnalysis
+%
+%
+%   I'm writing this to look through all files and find
+%   examples of deleted entries ...
+%
+%   TODO: Should implement infrastructure for loading files
 
 %date_dd_mm_yyyy_copy.sas7bdat
 %q_del
 
-d = dir(fullfile(root,'*.sas7bdat'));
-
-for i = 47:length(d)
+for i = 49:length(d)
     fprintf('%s\n',d(i).name);
     if d(i).name == "corrupt.sas7bdat"
         continue

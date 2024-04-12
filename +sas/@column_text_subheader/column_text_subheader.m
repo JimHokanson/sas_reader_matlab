@@ -4,6 +4,10 @@ classdef column_text_subheader
     %
     %   Contains strings but needs other subheaders to identify which
     %   string is which
+    %
+    %   n = ???
+    %   
+    %   How many of these do we have?
     
 
     properties
@@ -37,6 +41,8 @@ classdef column_text_subheader
             %
             %   17: 
 
+            %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileParser.java#L1526
+
             obj.size_text_block = double(typecast(bytes(5:6),'uint16'));
 
             obj.unknown7 = bytes(7:8);
@@ -58,23 +64,34 @@ classdef column_text_subheader
 
             %JAH: Note somewhere I saw something that said this is all
             %specified somewhere else, maybe in the main header???
-            if all(first8 == 0)
+            if all(first8 == 0) || all(first8 == 32)
                 %No compression
-                obj.compression_type = 'none';
+                obj.compression_type = "none";
                 if lcp > 0
-                    keyboard
+                    if all(first8 == 32)
+                        %do nothing
+                    else
+                        keyboard
+                    end
                 end
-            elseif lcs > 0
-                %cbsatocountycrosswalk.sas7bdat
-                obj.compression_type = 'none';
-                obj.creator_soft_str = strtrim(char(bytes(I:I+lcs-1)));
             elseif char(first8) == "SASYZCRL"
-                obj.compression_type = 'rle';
+                %example file: rle
+                obj.compression_type = "rle";
                 I = I + 8;
                 obj.creator_proc_name = strtrim(char(bytes(I:I+lcp-1)));
+            elseif char(first8) == "SASYZCR2"
+                %example file: rdc
+                obj.compression_type = "rdc";
+                I = I + 8;
+                obj.creator_proc_name = strtrim(char(bytes(I:I+lcp-1)));
+            elseif lcs > 0
+                %cbsatocountycrosswalk.sas7bdat
+                obj.compression_type = "none";
+                obj.creator_soft_str = strtrim(char(bytes(I:I+lcs-1)));
             else
+                error('Unhandled case')
                 %FileFromJMP.sas7bdat
-                obj.compression_type = 'binary';
+                obj.compression_type = "binary";
             end
 
             %{

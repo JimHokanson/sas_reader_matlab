@@ -8,10 +8,17 @@ classdef file < handle
     %       - sas_read_header
     %       -
     %
-    %   https://cran.r-project.org/web/packages/sas7bdat/vignettes/sas7bdat.pdfv
+    %   https://cran.r-project.org/web/packages/sas7bdat/vignettes/sas7bdat.pdf
+    %
+    %   https://github.com/xiaodaigh/sas7bdat-resources/blob/master/README.md
+    %
+    %   Julia
+    %   ------
+    %   https://github.com/tk3369/SASLib.jl/blob/b84e18b052fa9a6f7a7283c5685ac987420b0c7e/src/SASLib.jl#L1445
+    %
+    %   R
+    %   ----
     %   https://github.com/BioStatMatt/sas7bdat
-    %   https://github.com/pandas-dev/pandas/blob/main/pandas/io/sas/sas7bdat.py
-    %   https://github.com/pandas-dev/pandas/blob/main/pandas/io/sas/sas_constants.py
     %
     %   C/C++
     %   -----
@@ -22,11 +29,21 @@ classdef file < handle
     %   This bitbucket code can also be found at:
     %   https://github.com/openpharma/sas7bdat
     %
+    %   https://github.com/olivia76/cpp-sas7bdat
+    %
+    %   Python
+    %   ------
     %   Pandas version:
     %   https://github.com/pandas-dev/pandas/blob/038976ee29ba7594a38d0729071ba5cb73a98133/pandas/io/sas/sas7bdat.py#L4
     %
+    %   Java
+    %   ----
     %   Java Impl, Parso:
     %   https://github.com/epam/parso/blob/master/src/main/java/com/epam/parso/impl/SasFileParser.java
+    %
+    %   Go
+    %   --
+    %   https://github.com/kshedden/datareader
     %
     %   SAS universal viewer:
     %   https://support.sas.com/downloads/browse.htm?cat=74
@@ -47,7 +64,7 @@ classdef file < handle
         columns
 
         %Subheaders
-        subheaders
+        subheaders sas.subheaders
 
         row_size_sh
         col_size_sh
@@ -67,6 +84,7 @@ classdef file < handle
         bytes_per_row
 
         has_compression
+        has_deleted_rows = false
 
         last_data_read_parse_time
     end
@@ -102,7 +120,7 @@ classdef file < handle
 
             %Meta data parsing (first few pages)
             %-------------------------------------------------
-            obj.subheaders = sas.subheaders(); 
+            obj.subheaders = sas.subheaders(obj,fid,h.is_u64,h.page_length);
 
             obj.n_pages = h.page_count;
             all_pages = cell(1,obj.n_pages);
@@ -110,12 +128,13 @@ classdef file < handle
             data_starts = zeros(1,obj.n_pages);
             data_n_rows = zeros(1,obj.n_pages);
 
-            p = sas.page(fid,h,1,obj);
+            i = 1;
+            p = sas.page(fid,h,i,obj,obj.subheaders);
             obj.p1 = p;
             all_pages{1} = p;
 
-            data_starts(1) = p.data_block_start;
-            data_n_rows(1) = p.data_block_count;
+            data_starts(1) = p.header.data_block_start;
+            data_n_rows(1) = p.header.data_block_count;
 
             %   one_observation.sas7bdat
             %
@@ -125,86 +144,51 @@ classdef file < handle
 
             %After the first page, we get any additional meta data pages
             %-----------------------------------------------------------
-            mp = p; %main_page
-            if any(p.signature_subheader.page_last_appear > 1)
-                max_page = max(p.signature_subheader.page_last_appear);
+            sig_sh = obj.subheaders.signature;
+            if sig_sh.last_meta_page > 1
+                max_page = sig_sh.last_meta_page;
                 for i = 2:max_page
                     p = sas.page(fid,h,i,obj);
                     all_pages{i} = p;
-                    data_starts(i) = p.data_block_start;
-                    data_n_rows(i) = p.data_block_count;
-                    mp.row_size_subheader = [mp.row_size_subheader p.row_size_subheader];
-                    mp.col_size_subheader = [mp.col_size_subheader p.col_size_subheader];
-                    mp.signature_subheader = [mp.signature_subheader p.signature_subheader];
-                    mp.format_subheaders = [mp.format_subheaders p.format_subheaders];
-                    mp.col_text_headers = [mp.col_text_headers p.col_text_headers];
-
-                    %Note, the col_attr_headers has an array as a property
-                    %rather than an array of objects. Thus we need to
-                    %merge the property arrays, rather than simply
-                    %concatenating the objects.
-                    mp.col_attr_headers = merge(mp.col_attr_headers,p.col_attr_headers);
-                    mp.col_name_headers = [mp.col_name_headers p.col_name_headers];
-                    mp.col_list_headers = [mp.col_list_headers p.col_list_headers];
+                    data_starts(i) = p.header.data_block_start;
+                    data_n_rows(i) = p.header.data_block_count;
                 end
-
                 next_page = max_page + 1;
             else
                 next_page = 2;
             end
 
-            obj.row_size_sh = mp.row_size_subheader;
-            obj.col_size_sh = mp.col_size_subheader;
-            obj.sig_info_sh = mp.signature_subheader;
-
-            obj.format_sh = mp.format_subheaders;
-            obj.signature_sh = mp.signature_subheader;
-            obj.text_sh = mp.col_text_headers;
-            obj.name_sh = mp.col_name_headers;
-            obj.attr_sh = mp.col_attr_headers;
-            obj.list_sh = mp.col_list_headers;
-
-
-            %TODO: Verify length assumptions
-            %Only 1 row_size_subheader, col_size_subheader, signature_subheader
-
-
-            %Creation of the column entries
-            %----------------------------------------------
-            %
-            %   We should now have enough meta data to be able to creat the
-            %   column entries.
-            formats = mp.format_subheaders;
-            n_columns = length(formats);
-            cols = cell(1,n_columns);
-            for i = 1:n_columns
-                cols{i} = sas.column(i,formats(i),mp.col_name_headers,...
-                    mp.col_text_headers,mp.col_attr_headers);
-            end
-            obj.columns = [cols{:}];
-
+            %Column extraction
+            %-------------------------------------------------
+            obj.columns = obj.subheaders.extractColumns();
 
             %Processing of the remaining pages
             %----------------------------------------------------------
-            %- Note, I'm assuming all meta data is done
-            %- Is there a file where they add meta data at the end?
             for i = next_page:obj.n_pages
-                p = sas.page(fid,h,i,obj);
-                data_starts(i) = p.data_block_start;
-                data_n_rows(i) = p.data_block_count;
+                p = sas.page(fid,h,i,obj,obj.subheaders);
+                data_starts(i) = p.header.data_block_start;
+                data_n_rows(i) = p.header.data_block_count;
                 all_pages{i} = p;
-                %TODO: Verify no meta data added here ...
             end
 
             obj.all_pages = [all_pages{:}];
 
-            obj.bytes_per_row = obj.row_size_sh.row_length;
-            obj.n_rows = obj.row_size_sh.total_row_count;
+            obj.bytes_per_row = obj.subheaders.row_length;
+            obj.n_rows = obj.subheaders.n_rows;
 
             obj.data_starts = data_starts;
             obj.data_n_rows = data_n_rows;
 
             obj.has_compression = any([obj.all_pages.has_compressed]);
+
+            any_delete = any([obj.all_pages.has_delete_mask]);
+            if any_delete
+                obj.has_deleted_rows = any_delete;
+                all_delete = all([obj.all_pages.has_delete_mask]);
+                if ~all_delete
+                    error('Unhandled case')
+                end
+            end
 
             obj.meta_parse_time = toc(h_tic);
 
@@ -219,6 +203,11 @@ classdef file < handle
 
             if ~any(strcmp(in.output_type,{'table','struct'}))
                 error('"output_type" option: %s, not recognized',in.output_type)
+            end
+
+            has_deleted_rows2 = obj.has_deleted_rows;
+            if obj.has_deleted_rows
+                delete_mask = false(obj.n_rows,1);
             end
 
             %Read all data into memory
@@ -255,12 +244,17 @@ classdef file < handle
                 %
                 temp_data = zeros(bytes_per_row2,obj.n_rows,'uint8');
 
+                
+                
+
                 data_n_rows2 = obj.data_n_rows;
                 data_starts2 = obj.data_starts;
                 fid2 = obj.fid;
                 I2 = 0;
+                row2 = 0;
                 for i = 1:n_reads
-                    n_bytes_read = data_n_rows2(i)*bytes_per_row2;
+                    n_rows_cur_page = data_n_rows2(i);
+                    n_bytes_read = n_rows_cur_page*bytes_per_row2;
                     if n_bytes_read == 0
                         continue
                     end
@@ -268,6 +262,11 @@ classdef file < handle
                     I1 = I2 + 1;
                     I2 = I2 + n_bytes_read;
                     temp_data(I1:I2) = fread(fid2,n_bytes_read,"*uint8")';
+                    if has_deleted_rows2
+                        row1 = row2 + 1;
+                        row2 = row2 + n_rows_cur_page;
+                        delete_mask(row1:row2) = obj.all_pages(i).delete_mask(1:n_rows_cur_page);
+                    end
                 end
             end
 
@@ -355,6 +354,9 @@ classdef file < handle
                     %TODO: remove trailing spaces ...
                     temp = string(char(column_data_bytes));
                     s(i).values = strtrim(temp);
+                end
+                if has_deleted_rows2
+                    s(i).values(delete_mask) = [];
                 end
             end
 

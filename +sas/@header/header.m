@@ -7,6 +7,7 @@ classdef header < handle
     %
     %   See Also
     %   --------
+    %   sas.file
     %   sas.row_size_subheader
     %   sas.column_attributes
     %   sas.column_size_subheader
@@ -74,6 +75,7 @@ classdef header < handle
             %
             %   h = sas.header(fid)
 
+            %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileParser.java#L318
             %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas.c#L161
 
             %Offsets vary by a1 and a2, not by u64 vs not

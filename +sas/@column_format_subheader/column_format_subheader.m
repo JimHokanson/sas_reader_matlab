@@ -10,6 +10,10 @@ classdef column_format_subheader < handle
     %   sas.column_name_subheader
     %   sas.column
     %
+    %   Improvements
+    %   ------------
+    %   1. Extract informat and format from this class
+    %
 
     %{
     The column format and label subheader contains pointers to a column
@@ -51,11 +55,7 @@ classdef column_format_subheader < handle
             %47:52 59:64 - unknown47
 
             if is_u64
-
-                
-
                 %For dates.sas7bdat byte 17 is 12 which matches the format
-
                 obj.unknown5 = bytes(9:46);
                 obj.format_index = double(typecast(bytes(47:48),'uint16'))+1;
                 obj.format_offset = double(typecast(bytes(49:50),'uint16'))+9;

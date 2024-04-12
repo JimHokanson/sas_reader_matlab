@@ -9,11 +9,18 @@ classdef signature_counts_subheader < handle
     properties
         signatures
         subheader_names
+        %1b
         page_first_appear
+        %
+        %TODO: 0 or 1b index into 
         page_first_pointer
+        %
+        %  -1 if missing
+        %  
         page_last_appear
         page_last_pointer
         is_multi_page
+        last_meta_page
     end
 
     methods
@@ -21,11 +28,7 @@ classdef signature_counts_subheader < handle
             %
             %   bytes(57) => 12 - 12 things - TODO: Update document
             %
-            %   ???? Why in my file are there only 4 entries but
-            %   7 non-zero signatures (out of the 12)
-            %
-            %   The page itself has 7 pages
-            %
+            
             %
 
             %65 - start of subheader count vectors
@@ -129,6 +132,8 @@ classdef signature_counts_subheader < handle
             obj.page_last_appear = p_first_appear + n_pages-1;
             obj.page_last_pointer = p_last_pointer;
             obj.is_multi_page = p_first_appear ~= n_pages;
+
+            obj.last_meta_page = max(obj.page_last_appear);
         end
     end
 end

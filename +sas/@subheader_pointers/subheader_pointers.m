@@ -1,9 +1,17 @@
 classdef subheader_pointers < handle
     %
+    %   Class:
     %   sas.subheader_pointers
+    %
+    %   See Also
+    %   --------
+    %   sas.subheaders
 
 
     properties
+        % - 0b pulled directly from file
+        % - needs to be shifted by 1 for reading
+        % - this is relative to page start, not the file ...
         offsets
         lengths
 
@@ -27,12 +35,14 @@ classdef subheader_pointers < handle
     methods
         function value = get.t(obj)
             offset = obj.offsets;
+            i = 1:numel(obj.offsets);
+            i = i';
+            %Ugh, overriding length, be careful ...
             length = obj.lengths;
             flag = obj.comp_flags;
             type = obj.type; %#ok<PROP>
             section_type = obj.section_type; %#ok<PROP>
-
-            value = table(offset,length,flag,type,section_type); %#ok<PROP>
+            value = table(i,offset,length,flag,type,section_type); %#ok<PROP>
         end
     end
 

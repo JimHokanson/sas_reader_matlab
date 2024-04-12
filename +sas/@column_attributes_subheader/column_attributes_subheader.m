@@ -2,6 +2,8 @@ classdef column_attributes_subheader < handle
     %
     %   Class:
     %   sas.column_attributes
+    %
+    %   TODO: Summarize what this does ...
 
     properties
 
@@ -9,12 +11,18 @@ classdef column_attributes_subheader < handle
         unknown9
         unknown11
         
+        %offset, 0b, into row bytes
         data_row_offset
+
+        %Width in bytes I believe ...
         column_width
+        
         name_length_flag
-        column_type
+
         %1 - numeric
         %2 - character
+        column_type
+        
     end
 
     methods
@@ -76,19 +84,19 @@ classdef column_attributes_subheader < handle
 
         end
         function out = merge(obj1,obj2)
-                temp = [obj1 obj2];
+            temp = [obj1 obj2];
 
-                out = temp(1);
-                for i = 2:length(temp)
-                    obj2 = temp(i);
-                    out.unknown7 = [out.unknown7 obj2.unknown7];
-                    out.unknown9 = [out.unknown9 obj2.unknown9];
-                    out.unknown11 = [out.unknown11 obj2.unknown11];
-                    out.data_row_offset = [out.data_row_offset; obj2.data_row_offset];
-                    out.column_width = [out.column_width; obj2.column_width];
-                    out.name_length_flag = [out.name_length_flag; obj2.name_length_flag];
-                    out.column_type = [out.column_type; obj2.column_type];
-                end
+            out = temp(1);
+            for i = 2:length(temp)
+                obj2 = temp(i);
+                out.unknown7 = [out.unknown7 obj2.unknown7];
+                out.unknown9 = [out.unknown9 obj2.unknown9];
+                out.unknown11 = [out.unknown11 obj2.unknown11];
+                out.data_row_offset = [out.data_row_offset; obj2.data_row_offset];
+                out.column_width = [out.column_width; obj2.column_width];
+                out.name_length_flag = [out.name_length_flag; obj2.name_length_flag];
+                out.column_type = [out.column_type; obj2.column_type];
+            end
         end
     end
 end
