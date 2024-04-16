@@ -1,7 +1,26 @@
 function [t,file] = readFile(file_path)
+%X read file and load data into a table
 %
+%   This function loads the file and returns data in one call. If you would
+%   like more control over the data returned load the file and then call a
+%   data retrieval method (TODO: point to documentation)
 %
+%   Calling forms
+%   -------------
 %   [t,file] = sas.readFile(file_path)
+%
+%   %prompts for the file path
+%   [t,file] = sas.readFile()
+%
+%   Inputs
+%   ------
+%   file_path : string
+%       Path to the file (.sas7bdat format)
+%
+%   Outputs
+%   -------
+%   t : table
+%   file : sas.file
 %
 %   See Also
 %   --------
