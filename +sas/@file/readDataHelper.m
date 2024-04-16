@@ -24,7 +24,7 @@ if obj.has_compression
         keyboard
     end
 else
-    n_reads = obj.n_pages;
+    n_pages = obj.n_pages;
     %Note the "2" at the end of the variables is simply to avoid
     %MATLAB complaining about local variables intead of properties
     bytes_per_row2 = obj.bytes_per_row;
@@ -45,6 +45,9 @@ else
     %   b1  b2  b3
     %   b1  b2  b3
     %
+
+    data_n_rows = obj.data_n_rows;
+    data_starts = obj.data_starts;
     
 
     if ~isempty(in.start_stop_rows)
@@ -53,19 +56,37 @@ else
         n_rows_out = I2 - I1 + 1;
         %TODO: Check the range of I1 and I2
         temp_data = zeros(bytes_per_row2,n_rows_out,'uint8');
+
+        last_row_each_page = cumsum(data_n_rows);
+        first_row_each_page = [1 last_row_each_page(1:end-1)+1];
+
+
+
+
+        page_start = 
     else
         I1 = 1;
         I2 = obj.n_rows;
         temp_data = zeros(bytes_per_row2,obj.n_rows,'uint8');
     end
 
-    data_n_rows = obj.data_n_rows;
-    data_starts = obj.data_starts;
+
+    %First page
+
+
+    %Middle pages
+
+
+
+    %Last page
+
+
+
     keyboard
     fid2 = obj.fid;
     I2 = 0;
     row2 = 0;
-    for i = 1:n_reads
+    for i = 1:n_pages
         n_rows_cur_page = data_n_rows(i);
         n_bytes_read = n_rows_cur_page*bytes_per_row2;
         if n_bytes_read == 0
