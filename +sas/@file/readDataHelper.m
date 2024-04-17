@@ -2,10 +2,18 @@ function output = readDataHelper(obj,in)
 %
 %
 %   output = readDataHelper(obj,in)
+%
+%
+%   Speed improvements:
+%   -------------------
+%   1. hoist is_deleted check out
+%   2. hoist empty rows check out
 
 has_deleted_rows = obj.has_deleted_rows;
 if obj.has_deleted_rows
     delete_mask = false(obj.n_rows,1);
+else
+    delete_mask = [];
 end
 
 %Read all data into memory
@@ -21,13 +29,15 @@ if obj.has_compression
     temp_data = [temp{:}];
 
     if ~isempty(in.start_stop_rows)
+        h__startStopRowCheck(obj,in.start_stop_rows)
+
         keyboard
     end
 else
     n_pages = obj.n_pages;
     %Note the "2" at the end of the variables is simply to avoid
     %MATLAB complaining about local variables intead of properties
-    bytes_per_row2 = obj.bytes_per_row;
+    bytes_per_row = obj.bytes_per_row;
 
     %Note, this approach will double the memory requirements
     %1) initial data array
@@ -46,62 +56,130 @@ else
     %   b1  b2  b3
     %
 
-    data_n_rows = obj.data_n_rows;
-    data_starts = obj.data_starts;
+    n_rows_per_page = obj.data_n_rows;
+    
     
 
     if ~isempty(in.start_stop_rows)
+
+        h__startStopRowCheck(obj,in.start_stop_rows)
+
         I1 = in.start_stop_rows(1);
         I2 = in.start_stop_rows(2);
         n_rows_out = I2 - I1 + 1;
         %TODO: Check the range of I1 and I2
-        temp_data = zeros(bytes_per_row2,n_rows_out,'uint8');
+        temp_data = zeros(bytes_per_row,n_rows_out,'uint8');
 
-        last_row_each_page = cumsum(data_n_rows);
+        last_row_each_page = cumsum(n_rows_per_page);
         first_row_each_page = [1 last_row_each_page(1:end-1)+1];
 
 
+        pageI1 = find(I1 >= first_row_each_page & I1 <= last_row_each_page);
+        pageI2 = find(I2 >= first_row_each_page & I2 <= last_row_each_page);
 
+        start_page = (pageI1+1);
+        stop_page = pageI2-1;
 
-        page_start = 
+        if pageI1 == pageI2
+            n_rows_page1 = n_rows_per_page(pageI1);
+
+            keep1_startI = I1 - first_row_each_page(pageI1)+1;
+            keep1_stopI =  I2 - first_row_each_page(pageI1)+1;
+
+            temp_data1 = zeros(bytes_per_row,n_rows_page1,'uint8');
+
+            delete_mask1 = false(n_rows_page1,1);
+        else
+            n_rows_page1 = n_rows_per_page(pageI1);
+            n_rows_page2 = n_rows_per_page(pageI2);
+
+            keep1_startI = I1 - first_row_each_page(pageI1)+1;
+            keep1_stopI =  n_rows_page1;
+
+            keep2_startI = 1;
+            keep2_stopI =  I2 - first_row_each_page(pageI2)+1;
+
+            temp_data1 = zeros(bytes_per_row,n_rows_page1,'uint8');
+            temp_data2 = zeros(bytes_per_row,n_rows_page2,'uint8');
+
+            delete_mask1 = false(n_rows_page1,1);
+            delete_mask2 = false(n_rows_page2,1);
+        end
+
+        %First partial page
+        %--------------------------------
+        last_read_row = 0;
+        last_set_byte = 0;
+        [temp_data1,delete_mask1] = readUncompressedPages(obj,temp_data1,delete_mask1,pageI1,pageI1,last_read_row,last_set_byte);
+        
+        n1 = keep1_stopI - keep1_startI + 1;
+        temp_data(:,1:n1) = temp_data1(:,keep1_startI:keep1_stopI);
+        if has_deleted_rows
+            delete_mask(1:n1) = delete_mask1(keep1_startI:keep1_stopI);
+        end
+
+        %Setup for next section
+        %-------------------------------------
+        
+
+        %Complete pages
+        %--------------------------------
+        if stop_page >= start_page
+            %Note this only needs to be set here, and is 0 for the others
+            %because in the others we take the output and trim to where
+            %we need the specific subset to go
+            %
+            %here we don't take a subset of the output
+            last_read_row = n1;
+            last_set_byte = bytes_per_row*n1;
+            [temp_data,delete_mask] = readUncompressedPages(obj,temp_data,delete_mask,start_page,stop_page,last_read_row,last_set_byte);
+        end
+
+        %Second partial page
+        %----------------------------------------
+        if pageI1 ~= pageI2
+            last_read_row = 0;
+            last_set_byte = 0;
+            [temp_data2,delete_mask2] = readUncompressedPages(obj,temp_data2,delete_mask2,pageI2,pageI2,last_read_row,last_set_byte);
+
+            n2 = keep2_stopI - keep2_startI + 1;
+            temp_data(:,end-n2+1:end) = temp_data2(:,keep2_startI:keep2_stopI);
+            if has_deleted_rows
+                delete_mask(end-n2+1:end) = delete_mask2(keep2_startI:keep2_stopI);
+            end
+        end
     else
         I1 = 1;
-        I2 = obj.n_rows;
-        temp_data = zeros(bytes_per_row2,obj.n_rows,'uint8');
+        I2 = obj.n_pages;
+        temp_data = zeros(bytes_per_row,obj.n_rows,'uint8');
+
+        last_read_row = 0;
+        last_set_byte = 0;
+        [temp_data,delete_mask] = readUncompressedPages(obj,temp_data,delete_mask,I1,I2,last_read_row,last_set_byte);
     end
 
 
-    %First page
 
-
-    %Middle pages
-
-
-
-    %Last page
-
-
-
-    keyboard
-    fid2 = obj.fid;
-    I2 = 0;
-    row2 = 0;
-    for i = 1:n_pages
-        n_rows_cur_page = data_n_rows(i);
-        n_bytes_read = n_rows_cur_page*bytes_per_row2;
-        if n_bytes_read == 0
-            continue
-        end
-        fseek(fid2,data_starts(i),"bof");
-        I1 = I2 + 1;
-        I2 = I2 + n_bytes_read;
-        temp_data(I1:I2) = fread(fid2,n_bytes_read,"*uint8")';
-        if has_deleted_rows
-            row1 = row2 + 1;
-            row2 = row2 + n_rows_cur_page;
-            delete_mask(row1:row2) = obj.all_pages(i).delete_mask(1:n_rows_cur_page);
-        end
-    end
+    % keyboard
+    % fid2 = obj.fid;
+    % I2 = 0;
+    % row2 = 0;
+    % for i = 1:n_pages
+    %     n_rows_cur_page = data_n_rows(i);
+    %     n_bytes_read = n_rows_cur_page*bytes_per_row2;
+    %     if n_bytes_read == 0
+    %         continue
+    %     end
+    %     fseek(fid2,data_starts(i),"bof");
+    %     I1 = I2 + 1;
+    %     I2 = I2 + n_bytes_read;
+    %     temp_data(I1:I2) = fread(fid2,n_bytes_read,"*uint8")';
+    %     if has_deleted_rows
+    %         row1 = row2 + 1;
+    %         row2 = row2 + n_rows_cur_page;
+    %         delete_mask(row1:row2) = obj.all_pages(i).delete_mask(1:n_rows_cur_page);
+    %     end
+    % end
 end
 
 s = obj.rowsToData(temp_data,delete_mask);
@@ -109,6 +187,13 @@ s = obj.rowsToData(temp_data,delete_mask);
 output = h__convertToOutputType(s,in);
 
 end
+
+function h__startStopRowCheck(obj,start_stop_values)
+
+%TODO
+
+end
+
 
 function output = h__convertToOutputType(s,in)
 
@@ -131,5 +216,34 @@ switch in.output_type
         %  because we do this check as well at the top
         error('Unhandled exception')
 end
+
+end
+
+function [temp_data,delete_mask] = readUncompressedPages(obj,temp_data,delete_mask,p1,p2,last_read_row,last_set_byte)
+fid2 = obj.fid;
+I2 = last_set_byte;
+row2 = last_read_row;
+has_deleted_rows = obj.has_deleted_rows;
+n_rows_per_page = obj.data_n_rows;
+bytes_per_row = obj.bytes_per_row;
+data_starts = obj.data_starts;
+for i = p1:p2
+    n_rows_cur_page = n_rows_per_page(i);
+    if n_rows_cur_page == 0
+        continue
+    end
+    n_bytes_read = n_rows_cur_page*bytes_per_row;
+    
+    fseek(fid2,data_starts(i),"bof");
+    I1 = I2 + 1;
+    I2 = I2 + n_bytes_read;
+    temp_data(I1:I2) = fread(fid2,n_bytes_read,"*uint8")';
+    if has_deleted_rows
+        row1 = row2 + 1;
+        row2 = row2 + n_rows_cur_page;
+        delete_mask(row1:row2) = obj.all_pages(i).delete_mask(1:n_rows_cur_page);
+    end
+end
+
 
 end

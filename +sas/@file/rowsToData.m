@@ -12,10 +12,12 @@ c_offsets = [c.data_row_offset]+1;
 c_is_numeric = [c.is_numeric];
 c_formats = {c.format};
 n_columns = length(c);
-n_rows = obj.n_rows;
+n_rows = size(temp_data,2);
 
 s = struct('id',num2cell(1:n_columns),'name',{c.name},...
     'label',{c.label},'values',[]);
+
+has_deleted_rows = obj.has_deleted_rows;
 
 for i = 1:n_columns
     I1 = c_offsets(i);
@@ -89,7 +91,7 @@ for i = 1:n_columns
         temp = string(char(column_data_bytes));
         s(i).values = strtrim(temp);
     end
-    if has_deleted_rows2
+    if has_deleted_rows
         s(i).values(delete_mask) = [];
     end
 end

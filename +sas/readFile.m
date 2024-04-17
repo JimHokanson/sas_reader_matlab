@@ -52,7 +52,7 @@ end
 start_path = fileparts(file_path);
 
 file = sas.file(file_path);
-t = file.readAllData('output_type','table');
+t = file.readData('output_type','table');
 
 
 end
