@@ -113,6 +113,8 @@ classdef subheaders < handle
             
             sub_headers = cell(1,n_subs);
             sigs = zeros(1,n_subs);
+
+            c_count = 0;
             for i = 1:n_subs
                 offset = sub_offsets(i)+1;
                 n_bytes_m1 = sub_lengths(i)-1;
@@ -140,10 +142,11 @@ classdef subheaders < handle
                 %Compressed data in header
                 %------------------------------------
                 if sub_comp_flags(i) == 4
+                    c_count = c_count + 1;
                     if obj.compression_mode == "rdc"
                         comp_data_rows{end+1} = sas.utils.extractRDC(b2,obj.row_length);
                     elseif obj.compression_mode == "rle"
-                        comp_data_rows{end+1} = sas.utils.extractRLE(b2,obj.row_length);
+                        comp_data_rows{end+1} = sas.utils.extractRLE(b2,obj.row_length,c_count);
                     else
                         keyboard
                     end

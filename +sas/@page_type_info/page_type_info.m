@@ -54,7 +54,10 @@ classdef page_type_info
                     obj.has_uncompressed_data = false;
                     obj.has_compressed_data = true;
                     obj.has_deleted_rows = true;
-                case {256 384}
+                case {256}
+                    %
+                    %   
+                    %
                     %767543210 - bit_ids
                     %100000000 - bit_values
                     %obj.page_name = 'data';
@@ -62,6 +65,14 @@ classdef page_type_info
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
                     obj.has_deleted_rows = false;
+                case 384
+                    %384 - deleted_rows.sas7bdat
+                    %
+                    %Guessing at has_deleted_rows here
+                    obj.has_meta = false;
+                    obj.has_uncompressed_data = true;
+                    obj.has_compressed_data = false;
+                    obj.has_deleted_rows = true;
                 case 512
                     %8767543210 
                     %1000000000

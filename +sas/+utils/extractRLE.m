@@ -1,4 +1,4 @@
-function b3 = extractRLE(b2,row_length)
+function b3 = extractRLE(b2,row_length,c_count)
 %
 %   b3 = sas.utils.extractRLE(b2,row_length);
 %
@@ -21,6 +21,11 @@ function b3 = extractRLE(b2,row_length)
 
 %TODO: Why am I adding +1 to all the j values?
 
+% if c_count == 5
+%     keyboard
+% end
+
+%cmds = {};
 b3 = zeros(row_length,1,'uint8');
 i = 0;
 j = 1;
@@ -32,6 +37,8 @@ while ~done
     cmd = bitshift(next_control,-4);
     %all_cmds = [all_cmds cmd];
     len = double(bitand(next_control,15));
+
+    %cmds = [cmds {cmd}];
 
     %https://github.com/WizardMac/ReadStat/blob/dev/src/sas/readstat_sas_rle.c#L43
     %https://github.com/pandas-dev/pandas/blob/dc19148bf7197a928a129b1d1679b1445a7ea7c7/pandas/_libs/sas.pyx#L61
@@ -56,11 +63,11 @@ while ~done
 
 
         case 0 %SAS_RLE_COMMAND_COPY64
-            copy_len = b2(j+1) + 64 + len * 256;
+            copy_len = double(b2(j+1)) + 64 + len * 256;
             keyboard
         case 1 %SAS_RLE_COMMAND_COPY64_PLUS_4096
             %copy_len = (*input++) + 64 + length * 256 + 4096;
-            copy_len = b2(j+1) + 64 + len * 256 + 4096;
+            copy_len = double(b2(j+1)) + 64 + len * 256 + 4096;
             keyboard
         case 2 %SAS_RLE_COMMAND_COPY96
             copy_len = len + 96;
@@ -77,26 +84,26 @@ while ~done
             %b3 = [b3 repelem(b2(j+2),1,n_bytes)];
             j = j + 3;
         case 5 %SAS_RLE_COMMAND_INSERT_AT17
-            n_bytes = 17 + len*256;
+            n_bytes = 17+len*256+b2(j+1);
             %b3(i+1:i+n_bytes) = repelem(uint8('@'),1,n_bytes);
             b3(i+1:i+n_bytes) = uint8('@');
             i = i + n_bytes;
             %b3 = [b3 repelem(uint8('@'),1,n_bytes)];
-            j = j + 1;
+            j = j + 2;
         case 6 %SAS_RLE_COMMAND_INSERT_BLANK17
-            n_bytes = 17+len*256;
+            n_bytes = 17+len*256+b2(j+1);
             %b3(i+1:i+n_bytes) = repelem(uint8(' '),1,n_bytes);
             b3(i+1:i+n_bytes) = uint8(' ');
             i = i + n_bytes;
             %b3 = [b3 repelem(uint8(' '),1,n_bytes)];
-            j = j + 1;
+            j = j + 2;
         case 7 %SAS_RLE_COMMAND_INSERT_ZERO17
-            n_bytes = 17+len*256;
+            n_bytes = 17+len*256+b2(j+1);
             %b3(i+1:i+n_bytes) = repelem(uint8(0),1,n_bytes);
             b3(i+1:i+n_bytes) = uint8(0);
             i = i + n_bytes;
             %b3 = [b3 repelem(uint8(0),1,n_bytes)];
-            j = j + 1;
+            j = j + 2;
         case 8 %SAS_RLE_COMMAND_COPY1
             %copy next X
             n_bytes = len + 1;
@@ -128,7 +135,7 @@ while ~done
             b3(i+1:i+n_bytes) = b2(j+1);
             i = i + n_bytes;
             %b3 = [b3 repelem(b2(j+1),1,n_bytes)];
-            j = j + 1;
+            j = j + 2;
         case 13 %SAS_RLE_COMMAND_INSERT_AT2
             n_bytes = len + 2;
             %b3(i+1:i+n_bytes) = repelem(uint8('@'),1,n_bytes);

@@ -133,12 +133,15 @@ classdef file < handle
 
             obj.has_compression = any([obj.all_pages.has_compressed]);
 
-            any_delete = any([obj.all_pages.has_delete_mask]);
+            has_delete_mask = [obj.all_pages.has_delete_mask];
+            any_delete = any(has_delete_mask);
             if any_delete
                 obj.has_deleted_rows = any_delete;
-                all_delete = all([obj.all_pages.has_delete_mask]);
+                all_delete = all(has_delete_mask);
                 if ~all_delete
-                    error('Unhandled case')
+                    if ~all(mask)
+                        error('Unhandled case, some pages have delete instructions')
+                    end
                 end
             end
 

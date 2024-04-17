@@ -68,6 +68,15 @@ classdef page < handle
                 if status == -1
                     error('fseek failed')
                 end
+                if obj.page_type_info.has_deleted_rows
+                    status = fseek(fid,obj.header.start_position,'bof');
+                    if status == -1
+                        error('Unhandled error')
+                    end
+                    bytes = fread(fid,h.page_length,'*uint8')';
+                    obj.full_bytes = bytes;
+                    obj.processDeletedMask(subheaders);
+                end
                 return
             end
 
