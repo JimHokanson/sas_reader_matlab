@@ -25,8 +25,7 @@ if obj.has_compression
     %
     %   Although below could be a pages thing too ...
     all_p = obj.all_pages;
-    temp = [all_p.comp_data_rows];
-    temp_data = [temp{:}];
+    temp_data = [all_p.comp_data_rows];
 
     if ~isempty(in.start_stop_rows)
         h__startStopRowCheck(obj,in.start_stop_rows)
@@ -50,8 +49,8 @@ else
     %
     %Storage:
     %
-    %   a1  a2  a3   -> a,b,c -> different columns
-    %   a1  a2  a3   -> 1,2,3 -> first sample, 2nd sample, etc.
+    %   a1  a2  a3   -> a,b,c -> different data columns
+    %   a1  a2  a3   -> 1,2,3 -> first row, 2nd row, etc.
     %   b1  b2  b3
     %   b1  b2  b3
     %

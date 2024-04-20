@@ -24,6 +24,9 @@ classdef page < handle
         delete_mask
         has_delete_mask = false
         has_compressed = false
+
+        data_block_count
+        data_block_start
     end
 
 
@@ -52,12 +55,19 @@ classdef page < handle
             %Header processing
             obj.header = sas.page_header(fid,h);
 
+            obj.data_block_count = obj.header.data_block_count;
+            obj.data_block_start = obj.header.data_block_start;
+
             %Page type info processing
             %-----------------------------
             %
             % - Based on page_type in header, get more info
             % - validate other properties of the header
             obj.page_type_info = sas.page_type_info(obj.header);
+
+            if obj.page_type_info.has_deleted_rows
+                parent.has_deleted_rows = true;
+            end
  
             %When no subheaders adjust file pointer to next page and exit
             %------------------------------------------------------------
@@ -76,6 +86,9 @@ classdef page < handle
                     bytes = fread(fid,h.page_length,'*uint8')';
                     obj.full_bytes = bytes;
                     obj.processDeletedMask(subheaders);
+                elseif parent.has_deleted_rows
+                    obj.delete_mask = false(1,obj.data_block_count);
+                    obj.has_delete_mask = true;
                 end
                 return
             end
@@ -117,6 +130,10 @@ classdef page < handle
             %Deleted mask
             %-------------------------------------------
             obj.processDeletedMask(subheaders);
+
+            if obj.page_type_info.has_missing_column_info
+                %keyboard
+            end
         end        
         function processDeletedMask(obj,subheaders)
 

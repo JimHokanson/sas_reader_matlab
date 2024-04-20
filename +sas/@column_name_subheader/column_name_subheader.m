@@ -51,7 +51,11 @@ classdef column_name_subheader < handle
                 text_offset(i) = typecast(bytes(I+3:I+4),'uint16') + read_offset;
                 text_length(i) = typecast(bytes(I+5:I+6),'uint16');
                 I = I + 8;
+
+                %TODO: Look at the index for missing columns ...
             end
+
+            %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileParser.java#L1580
             
             obj.text_index = text_index;
             obj.text_offset = text_offset;

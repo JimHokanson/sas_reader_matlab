@@ -89,9 +89,10 @@ classdef column_text_subheader
                 obj.compression_type = "none";
                 obj.creator_soft_str = strtrim(char(bytes(I:I+lcs-1)));
             else
-                error('Unhandled case')
-                %FileFromJMP.sas7bdat
-                obj.compression_type = "binary";
+                %fts0003.sas7bdat
+                %
+                obj.compression_type = "none";
+                obj.creator_soft_str = strtrim(char(bytes(I:I+lcp-1)));
             end
 
             %{

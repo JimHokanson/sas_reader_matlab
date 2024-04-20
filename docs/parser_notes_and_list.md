@@ -1,7 +1,9 @@
 # Parsers #
 
-https://github.com/Roche/pyreadstat
 
+Shoutout to this link for a nice resource summary page:
+
+https://github.com/xiaodaigh/sas7bdat-resources
 
 - C/C++
   - ReadStat, https://github.com/WizardMac/ReadStat
@@ -16,8 +18,12 @@ https://github.com/Roche/pyreadstat
 - Python
   - Pandas, https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sas.html)
   - Pyreadstat, https://pypi.org/project/pyreadstat/
-  - sas7bdat, https://github.com/jonashaag/sas7bdat
+  - sas7bdat (Haag), https://github.com/jonashaag/sas7bdat
     - Marketed as fastest SAS parser
+    - Uses custom C/C++ (i.e., non-readstat) under the hood
+  - sas7bdat (Hobbs), https://bitbucket.org/jaredhobbs/sas7bdat/src/master/
+    - Nice simple Python parser
+    - ported from Matt's R code (but with more updates)
 - R
   - sas7bdat, https://github.com/BioStatMatt/sas7bdat
   - Haven, https://github.com/tidyverse/haven

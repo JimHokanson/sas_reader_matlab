@@ -9,220 +9,21 @@ function b3 = extractRDC(b2,row_length)
 %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas7bdat_read.c#L506
 %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/BinDecompressor.java#L59
 
-% b4 = extractRDC_mex(b2,row_length);
+
+
+b3 = extractRDC_mex(b2,row_length)';
 % b3 = b4;
 
 
 % b3 = rdc_decompress(b2, row_length);
 % %Must be column vector
 % b3 = b3(:);
-b3 = rdc_decompress2(b2,row_length);
+% b3 = rdc_decompress2(b2,row_length);
 %b4 = rdc_parse1(b2, row_length);
-return
-
-
-
-
-ctrl_bits = uint16(0);
-ctrl_mask = uint16(0);
-rpos = 1;
-ipos = 1;
-
-b3 = zeros(row_length,1,'uint8');
-
-while ipos < length(b2)
-    ctrl_mask = bitshift(ctrl_mask,-1);
-    %ctrl_mask = ctrl_mask >> 1
-    if ctrl_mask == 0
-        t1 = uint16(b2(ipos));
-        t2 = uint16(b2(ipos+1));
-        ctrl_bits = bitshift(t1,8) + t2;
-        ipos = ipos + 2;
-        ctrl_mask = uint16(32768); %0x8000
-    end
-
-    if bitand(ctrl_bits,ctrl_mask) == 0
-        b3(rpos) = b2(ipos);
-        rpos = rpos + 1;
-        ipos = ipos + 1;
-        continue
-    end
-
-    cmd = uint16(bitshift(b2(ipos),-4));
-    cmd = bitand(cmd,15);
-    cnt = uint16(b2(ipos));
-    cnt = uint16(bitand(cnt,15));
-
-        %short RLE
-    if cmd == 0
-        cnt = cnt + 3;
-        b3(rpos:rpos+cnt-1) = b2(ipos);
-        rpos = rpos + cnt;
-        ipos = ipos + 1;
-
-        %long RLE
-    elseif cmd == 1
-        temp = uint16(b2(ipos));
-        temp = bitshift(temp,4);
-        cnt = cnt + temp;
-        cnt = cnt + 19;
-        ipos = ipos + 1;
-        b3(rpos:rpos+cnt-1) = b2(ipos);
-        rpos = rpos + cnt;
-        ipos = ipos + 1;
-    elseif cmd == 2
-        ofs = cnt + 3;
-        temp = uint16(b2(ipos));
-        temp = bitshift(temp,4);
-        ofs = ofs + temp;
-        ipos = ipos+1;
-        cnt = uint16(b2(ipos));
-        ipos = ipos+1;
-        cnt = cnt + 16;
-        I1 = uint16(rpos) - ofs;
-        %buf_set(outbuff, rpos + k, buf_get(outbuff, rpos - <int>ofs + k))
-        I2 = I1+uint16(cnt)-1;
-
-        b3(rpos:rpos+cnt-1) = b3(I1:I2);
-        rpos = rpos + cnt;
-    else
-        ofs = cnt + 3;
-        temp = uint16(b2(ipos));
-        temp = bitshift(temp,4);
-        ofs = ofs + temp;
-        ipos = ipos + 1;
-        I1 = uint16(rpos) - ofs;
-        I2 = I1+uint16(cmd)-1;
-        b3(rpos:rpos+cmd-1) = b3(I1:I2);
-
-            %for k in range(cmd):
-               %buf_set(outbuff, rpos + k, buf_get(outbuff, rpos - <int>ofs + k))
-        rpos = rpos + cmd;
-
-    end
-
 
 end
 
 
-
-%{
-byte[] srcRow = Arrays.copyOfRange(page, pageoffset, srcLength + pageoffset);
-byte[] outRow = new byte[resultLength];
-int srcOffset = 0;
-int outOffset = 0;
-int ctrlBits = 0, ctrlMask = 0;
-while (srcOffset < srcLength) {
-
-    ctrlMask >>= 1;
-    if (ctrlMask == 0) {
-        ctrlBits = (((srcRow[srcOffset]) & 0xff) << 8) | (srcRow[srcOffset + 1] & 0xff);
-        srcOffset += 2;
-        ctrlMask = 0x8000;
-    }
-
-    // just copy this char if control bit is zero
-    if ((ctrlBits & ctrlMask) == 0) {
-        outRow[outOffset++] = srcRow[srcOffset++];
-        continue;
-    }
-%}
-
-%{
-    readstat_error_t retval = READSTAT_OK;
-    const unsigned char *input = (const unsigned char *)subheader;
-    char *buffer = malloc(row_length);
-    char *output = buffer;
-    while (input + 2 <= (const unsigned char *)subheader + len) {
-        int i;
-        unsigned short prefix = (input[0] << 8) + input[1];
-        input += 2;
-        for (i=0; i<16; i++) {
-            if ((prefix & (1 << (15 - i))) == 0) {
-                if (input + 1 > (const unsigned char *)subheader + len) {
-                    break;
-                }
-                if (output + 1 > buffer + ctx->row_length) {
-                    retval = READSTAT_ERROR_ROW_WIDTH_MISMATCH;
-                    goto cleanup;
-                }
-                *output++ = *input++;
-                continue;
-            }
-%}
-
-%{
-cdef:
-        uint8_t cmd
-        uint16_t ctrl_bits = 0, ctrl_mask = 0, ofs, cnt
-        int rpos = 0, k, ii
-        size_t ipos = 0
-
-    ii = -1
-
-    while ipos < inbuff.length:
-        ii += 1
-        ctrl_mask = ctrl_mask >> 1
-        if ctrl_mask == 0:
-            ctrl_bits = ((<uint16_t>buf_get(inbuff, ipos) << 8) +
-                         <uint16_t>buf_get(inbuff, ipos + 1))
-            ipos += 2
-            ctrl_mask = 0x8000
-
-        if ctrl_bits & ctrl_mask == 0:
-            buf_set(outbuff, rpos, buf_get(inbuff, ipos))
-            ipos += 1
-            rpos += 1
-            continue
-
-        cmd = (buf_get(inbuff, ipos) >> 4) & 0x0F
-        cnt = <uint16_t>(buf_get(inbuff, ipos) & 0x0F)
-        ipos += 1
-
-        # short RLE
-        if cmd == 0:
-            cnt += 3
-            for k in range(cnt):
-                buf_set(outbuff, rpos + k, buf_get(inbuff, ipos))
-            rpos += cnt
-            ipos += 1
-
-        # long RLE
-        elif cmd == 1:
-            cnt += <uint16_t>buf_get(inbuff, ipos) << 4
-            cnt += 19
-            ipos += 1
-            for k in range(cnt):
-                buf_set(outbuff, rpos + k, buf_get(inbuff, ipos))
-            rpos += cnt
-            ipos += 1
-
-        # long pattern
-        elif cmd == 2:
-            ofs = cnt + 3
-            ofs += <uint16_t>buf_get(inbuff, ipos) << 4
-            ipos += 1
-            cnt = <uint16_t>buf_get(inbuff, ipos)
-            ipos += 1
-            cnt += 16
-            for k in range(cnt):
-                buf_set(outbuff, rpos + k, buf_get(outbuff, rpos - <int>ofs + k))
-            rpos += cnt
-
-        # short pattern
-        else:
-            ofs = cnt + 3
-            ofs += <uint16_t>buf_get(inbuff, ipos) << 4
-            ipos += 1
-            for k in range(cmd):
-                buf_set(outbuff, rpos + k, buf_get(outbuff, rpos - <int>ofs + k))
-            rpos += cmd
-
-    return rpos
-
-%}
-
-end
 
 function outbuff = rdc_decompress2(inbuff,out_len)
     inbuff_len = length(inbuff);
@@ -282,7 +83,7 @@ function outbuff = rdc_decompress2(inbuff,out_len)
             case 2 % Long Pattern
                 ofs = cnt + 3 + bitshift(uint16(inbuff(ipos)), 4);
                 ipos = ipos + 1;
-                cnt = inbuff(ipos) + 16;
+                cnt = uint16(inbuff(ipos)) + 16;
                 ipos = ipos + 1;
                 outbuff(rpos:rpos+cnt-1) = outbuff(rpos-ofs:rpos-ofs+cnt-1);
                 rpos = rpos + cnt;

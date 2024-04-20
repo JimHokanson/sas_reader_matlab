@@ -96,23 +96,30 @@ classdef file < handle
             %After the first page, we get any additional meta data pages
             %-----------------------------------------------------------
             sig_sh = obj.subheaders.signature;
-            if sig_sh.last_meta_page > 1
-                max_page = sig_sh.last_meta_page;
-                for i = 2:max_page
-                    p = sas.page(fid,h,i,obj);
-                    all_pages{i} = p;
-                    data_starts(i) = p.header.data_block_start;
-                    data_n_rows(i) = p.header.data_block_count;
-                end
-                next_page = max_page + 1;
-            else
+            if isempty(sig_sh)
                 next_page = 2;
+            else
+                if sig_sh.last_meta_page > 1
+                    max_page = sig_sh.last_meta_page;
+                    if max_page > obj.n_pages
+                        max_page = obj.n_pages;
+                    end
+                    for i = 2:max_page
+                        p = sas.page(fid,h,i,obj,obj.subheaders);
+                        all_pages{i} = p;
+                        data_starts(i) = p.header.data_block_start;
+                        data_n_rows(i) = p.header.data_block_count;
+                    end
+                    next_page = max_page + 1;
+                else
+                    next_page = 2;
+                end
             end
 
             %Column extraction
             %-------------------------------------------------
-            obj.columns = obj.subheaders.extractColumns();
-            obj.column_names = {obj.columns.name}';
+            %obj.columns = obj.subheaders.extractColumns();
+            %obj.column_names = {obj.columns.name}';
 
             %Processing of the remaining pages
             %----------------------------------------------------------
@@ -123,6 +130,9 @@ classdef file < handle
                 all_pages{i} = p;
             end
 
+            obj.columns = obj.subheaders.extractColumns();
+            obj.column_names = {obj.columns.name}';
+
             obj.all_pages = [all_pages{:}];
 
             obj.bytes_per_row = obj.subheaders.row_length;
@@ -131,6 +141,7 @@ classdef file < handle
             obj.data_starts = data_starts;
             obj.data_n_rows = data_n_rows;
 
+            %Moved this into the page parsing
             obj.has_compression = any([obj.all_pages.has_compressed]);
 
             has_delete_mask = [obj.all_pages.has_delete_mask];
@@ -139,9 +150,8 @@ classdef file < handle
                 obj.has_deleted_rows = any_delete;
                 all_delete = all(has_delete_mask);
                 if ~all_delete
-                    if ~all(mask)
-                        error('Unhandled case, some pages have delete instructions')
-                    end
+                    keyboard
+                    error('Unhandled case, some pages have delete instructions')
                 end
             end
 

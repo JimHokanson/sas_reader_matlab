@@ -3,6 +3,11 @@ function s = rowsToData(obj,temp_data,delete_mask)
 %   Inputs
 %   ------
 %   temp_data
+%
+%
+%   See Also
+%   --------
+%   
 
 %Data conversion ...
 %-------------------------------------------------
@@ -23,18 +28,50 @@ for i = 1:n_columns
     I1 = c_offsets(i);
     I2 = c_offsets(i)+c_widths_m1(i);
     if c_is_numeric(i)
+        %Note numeric could include dates or times
+        %or could just be a number
+        
+        %data_rows are columns
         column_data_bytes = zeros(8,n_rows,'uint8');
         column_data_bytes(8-c_widths_m1(i):8,:) = temp_data(I1:I2,:);
         s(i).values = typecast(column_data_bytes(:),'double');
+        
+    
+        %data rows are rows
+        %{
+        column_data_bytes = zeros(n_rows,8,'uint8');
+        column_data_bytes(:,8-c_widths_m1(i):8) = temp_data(:,I1:I2);
+        column_data_bytes = column_data_bytes';
+        s(i).values = typecast(column_data_bytes(:),'double');
+        %}
+
+        %TODO: custom formats
+        %https://www.restore.ac.uk/PEAS/ex6datafiles/program_code/ex6formats.sas
+        %ALC
+        %DRGCODE
+        %ETHGP
+        %GENDER
+
+        %{
+            %enumerated types
+            {0×0 char}    {'ALC'}    {'BEST'}    {'DRGCODE'}    {'ETHGP'}    {'GENDER'}
+            {'SECTOR'}    {'SM'}    {'SZINDEP'}    {'YESNO'}    {'YZLEAVE'}
+
+        %}
 
         %https://github.com/epam/parso/pull/86
         switch c_formats{i}
             case ''
-            case 'BEST'
-                %
-                %do nothing
 
-                %done
+            case 'COMMA'
+                %numeric that uses commas to separate digits
+                %   
+                % e.g.,   23,451.54
+
+            case 'COMMAX'
+                %
+                %   23.451,54 - European style ...
+
             case 'DATETIME'
                 %
                 %   seconds since 01/01/1960
@@ -46,6 +83,7 @@ for i = 1:n_columns
 
                 d_origin = datetime(1960,1,1);
                 s(i).values = d_origin + days(s(i).values);
+
             case {'MMDDYY','YYMMDD'}
                 d_origin = datetime(1960,1,1);
                 s(i).values = d_origin + days(s(i).values);
@@ -75,7 +113,8 @@ for i = 1:n_columns
                 %
                 %   ?? What to do here?
             otherwise
-                error('Unrecognized format')
+                
+                %error('Unrecognized format: %s',c_formats{i})
 
         end
     else
@@ -84,7 +123,14 @@ for i = 1:n_columns
         %**** Ideally we would do this in C and avoid transpose
         %and temporary operations
 
+        %data rows are columns
         column_data_bytes = temp_data(I1:I2,:)';
+        
+        %data rows are rows
+        %{
+            column_data_bytes = temp_data(:,I1:I2);
+        %}
+
         %TODO: encoding
         %native2unicode
         %TODO: remove trailing spaces ...

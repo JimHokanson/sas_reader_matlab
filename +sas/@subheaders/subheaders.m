@@ -22,6 +22,7 @@ classdef subheaders < handle
         col_name sas.column_name_subheader
         col_attr sas.column_attributes_subheader
         col_list sas.column_list_subheader
+        unknowns = {}
 
         row_length
         n_rows
@@ -64,8 +65,7 @@ classdef subheaders < handle
             sub_lengths = s.lengths;
             sub_comp_flags = s.comp_flags;
 
-            %TODO: preallocate
-            comp_data_rows = {};
+            
 
             %sub_types = s.type;
 
@@ -90,8 +90,7 @@ classdef subheaders < handle
 
             n_subs = length(s.offsets);
 
-            truncated = false;
-            I = find(s.comp_flags == 1);
+            I = find(sub_comp_flags == 1);
             if length(I) > 1
                 error('Expecting only 1 truncated flag')
             elseif length(I) == 1
@@ -99,8 +98,24 @@ classdef subheaders < handle
                     error('Expecting truncated subheader at end of subheaders')
                 else
                     n_subs = n_subs - 1;
-                    truncated = true;
                 end
+            end
+
+            Ic = 0;
+            compression_flags_present = false;
+            if any(sub_comp_flags == 4)
+                %
+                %   Note currently we store uncompresse with compressed
+                %
+                %   Hard to tell which entries are data rows ...
+                
+                if isempty(obj.row_length)
+                    compression_flags_present = true;
+                else
+                    comp_data_rows = zeros(obj.row_length,n_subs,'uint8');
+                end
+            else
+                comp_data_rows = [];
             end
 
             %Note, this is an over-allocation but that's probably fine
@@ -143,15 +158,18 @@ classdef subheaders < handle
                 %------------------------------------
                 if sub_comp_flags(i) == 4
                     c_count = c_count + 1;
+                    Ic = Ic + 1;
                     if obj.compression_mode == "rdc"
-                        comp_data_rows{end+1} = sas.utils.extractRDC(b2,obj.row_length);
+                        comp_data_rows(:,Ic) = sas.utils.extractRDC(b2,obj.row_length);
                     elseif obj.compression_mode == "rle"
-                        comp_data_rows{end+1} = sas.utils.extractRLE(b2,obj.row_length,c_count);
+                        comp_data_rows(:,Ic) = sas.utils.extractRLE(b2,obj.row_length,c_count);
                     else
-                        keyboard
+                        %fts0003.sas7bdat
+                        comp_data_rows(:,Ic) = sas.utils.extractRDC(b2,obj.row_length);
                     end
                     continue
                 end
+
 
                 %Parso suggests that the first 4 bytes for u64 might be 
                 %0 followed by the signature ...
@@ -160,9 +178,16 @@ classdef subheaders < handle
 
                 sigs(i) = header_signature;
                 %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas7bdat_read.c#L626
+
+
+                %List of those from Parso
+                %
                 %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileParser.java#L87
                 switch header_signature
                     case 0
+                        Ic = Ic + 1;
+                        comp_data_rows(:,Ic) = b2;
+                        
                         %see in dates_binary.sas7bdat
                         %- even after skipping ending 1
                         
@@ -178,27 +203,31 @@ classdef subheaders < handle
                         %
                         %   obj.compression_mode = 'rdc'
 
-                        if obj.compression_mode == "rdc"
-                            %Apparently this is just non-compressed data
-                            comp_data_rows{end+1} = b2';
-                        else
-                            keyboard
-                        end
+                        % if obj.compression_mode == "rdc"
+                        %     %Apparently this is just non-compressed data
+                        %     comp_data_rows{end+1} = b2';
+                        % else
+                        %     keyboard
+                        % end
                         %obj.sub_count_short = true;
                         %obj.n_subheaders = i - 1;
                         %sub_headers(i:end) = [];
                         
                         %error('Unhandled case')
+                        s.logSectionType(i,'0-sub',0);
                     case 4143380214 %column-size subheader
                         temp = sas.column_size_subheader(b2,obj.is_u64);
                         obj.setColSizeSubheader(temp);
                         sub_headers{i} = temp;
-                        s.logSectionType(i,'col-size');
+                        s.logSectionType(i,'col-size',header_signature);
                     case 4160223223 %row-size subheader
                         temp = sas.row_size_subheader(b2,obj.is_u64);
                         obj.setRowSizeSubheader(temp);
                         sub_headers{i} = temp;
-                        s.logSectionType(i,'row-size');
+                        s.logSectionType(i,'row-size',header_signature);
+                        if compression_flags_present
+                            comp_data_rows = zeros(obj.row_length,n_subs,'uint8');
+                        end
                     case 4294966270  %column-format subheader
                         %n = 1 per column
                         format_I = format_I + 1;
@@ -206,13 +235,22 @@ classdef subheaders < handle
                         format_headers(format_I) = sub_headers(i);
                         %- format
                         %- label
-                        s.logSectionType(i,'col-format');
+                        s.logSectionType(i,'col-format',header_signature);
+                    case 4294967290
+                        %FFFFFFFA - not sure what this is ...
+                        %
+                        %   seen with AMD page type
+                        %   fts0003.sas7bdat
+
+                        obj.unknowns{end+1} = b2;
+
+                        s.logSectionType(i,'unknown FFFFFFFA',header_signature);
                     case 4294966272 %signature counts
                         %When a particular subheader first and last appears
                         temp = sas.signature_counts_subheader(b2,obj.is_u64);
                         obj.setSignatureSubheader(temp);
                         sub_headers{i} = temp;
-                        s.logSectionType(i,'sig-counts');
+                        s.logSectionType(i,'sig-counts',header_signature);
                     case 4294967292 %-- COLUMN ATTRIBUTES
                         %-----------------------------------------
                         sub_headers{i} = sas.column_attributes_subheader(b2,obj.is_u64);
@@ -227,7 +265,7 @@ classdef subheaders < handle
                         %information regarding the column offsets
                         %within a data row, the column widths, and the
                         %column types (either numeric or character).
-                        s.logSectionType(i,'col-attr');
+                        s.logSectionType(i,'col-attr',header_signature);
                     case 4294967293 %-- COLUMN TEXT
                         sub_headers{i} = sas.column_text_subheader(b2,obj.is_u64,obj.row_size);
                         
@@ -236,34 +274,30 @@ classdef subheaders < handle
                         
                         %text but not linked to any column
                         obj.col_text = [obj.col_text sub_headers{i}];
-                        s.logSectionType(i,'col-text');
+                        s.logSectionType(i,'col-text',header_signature);
                         obj.compression_mode = sub_headers{i}.compression_type;
                     case 4294967294 %-- COLUMN LIST
                         sub_headers{i} = sas.column_list_subheader(b2,obj.is_u64);
                         obj.col_list = [obj.col_list sub_headers{i}];
                         %Unclear what this is ...
-                        s.logSectionType(i,'col-list');
+                        s.logSectionType(i,'col-list',header_signature);
                     case 4294967295 %-- COLUMN NAME
                         sub_headers{i} = sas.column_name_subheader(b2,obj.is_u64);
                         obj.col_name = [obj.col_name sub_headers{i}];
-                        s.logSectionType(i,'col-name');
+                        s.logSectionType(i,'col-name',header_signature);
                     otherwise
-                        if obj.compression_mode == "rdc"
-                            comp_data_rows{end+1} = b2';
-                            continue
-                        else
-                            keyboard
-                        end
-                        error('Unrecognized header')
+                        %Note, this is risky as we may have legit header
+                        %although if that happens we will get an error
+                        Ic = Ic + 1;
+                        comp_data_rows(:,Ic) = b2;
                 end
             end
 
-            obj.col_format = [obj.col_format format_headers{1:format_I}];
+            if size(comp_data_rows,2) > Ic
+                comp_data_rows(:,Ic+1:end) = [];
+            end
 
-            
-            
-            
-            
+            obj.col_format = [obj.col_format format_headers{1:format_I}];
 
         end
         function columns = extractColumns(obj)

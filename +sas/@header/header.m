@@ -16,6 +16,7 @@ classdef header < handle
     %
 
     properties
+        bytes
         start_position
 
         %1:32
@@ -102,6 +103,8 @@ classdef header < handle
             %ASSUMPTION: Minimum length is 1024
             %*** FREAD ***
             bytes = fread(fid,1024,"*uint8")';
+
+            obj.bytes = bytes;
 
             obj.magic_number = bytes(1:32);
 

@@ -25,7 +25,7 @@ function b3 = extractRLE(b2,row_length,c_count)
 %     keyboard
 % end
 
-%cmds = {};
+cmds = {};
 b3 = zeros(row_length,1,'uint8');
 i = 0;
 j = 1;
@@ -38,7 +38,7 @@ while ~done
     %all_cmds = [all_cmds cmd];
     len = double(bitand(next_control,15));
 
-    %cmds = [cmds {cmd}];
+    cmds = [cmds {cmd}];
 
     %https://github.com/WizardMac/ReadStat/blob/dev/src/sas/readstat_sas_rle.c#L43
     %https://github.com/pandas-dev/pandas/blob/dc19148bf7197a928a129b1d1679b1445a7ea7c7/pandas/_libs/sas.pyx#L61
@@ -64,7 +64,9 @@ while ~done
 
         case 0 %SAS_RLE_COMMAND_COPY64
             copy_len = double(b2(j+1)) + 64 + len * 256;
-            keyboard
+            b3(i+1:i+copy_len) = b2(j+2:j+1+copy_len);
+            j = j + copy_len + 2;
+            i = i + copy_len;
         case 1 %SAS_RLE_COMMAND_COPY64_PLUS_4096
             %copy_len = (*input++) + 64 + length * 256 + 4096;
             copy_len = double(b2(j+1)) + 64 + len * 256 + 4096;
@@ -84,21 +86,21 @@ while ~done
             %b3 = [b3 repelem(b2(j+2),1,n_bytes)];
             j = j + 3;
         case 5 %SAS_RLE_COMMAND_INSERT_AT17
-            n_bytes = 17+len*256+b2(j+1);
+            n_bytes = 17+len*256+double(b2(j+1));
             %b3(i+1:i+n_bytes) = repelem(uint8('@'),1,n_bytes);
             b3(i+1:i+n_bytes) = uint8('@');
             i = i + n_bytes;
             %b3 = [b3 repelem(uint8('@'),1,n_bytes)];
             j = j + 2;
         case 6 %SAS_RLE_COMMAND_INSERT_BLANK17
-            n_bytes = 17+len*256+b2(j+1);
+            n_bytes = 17+len*256+double(b2(j+1));
             %b3(i+1:i+n_bytes) = repelem(uint8(' '),1,n_bytes);
             b3(i+1:i+n_bytes) = uint8(' ');
             i = i + n_bytes;
             %b3 = [b3 repelem(uint8(' '),1,n_bytes)];
             j = j + 2;
         case 7 %SAS_RLE_COMMAND_INSERT_ZERO17
-            n_bytes = 17+len*256+b2(j+1);
+            n_bytes = 17+len*256+double(b2(j+1));
             %b3(i+1:i+n_bytes) = repelem(uint8(0),1,n_bytes);
             b3(i+1:i+n_bytes) = uint8(0);
             i = i + n_bytes;
