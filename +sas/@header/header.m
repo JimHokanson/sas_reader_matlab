@@ -357,7 +357,7 @@ classdef header < handle
             %*** FSEEK ***
             status = fseek(fid,obj.header_length,'bof');
             if status == -1
-                oerror('Unexpected error when seeking to first page')
+                error('Unexpected error when seeking to first page')
             end
         end
     end

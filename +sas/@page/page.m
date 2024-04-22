@@ -11,22 +11,27 @@ classdef page < handle
         %count on which page is being processed, starting at 1
         page_index
 
+
         header sas.page_header
+        data_block_count
+        data_block_start
+
 
         page_type_info sas.page_type_info
+        has_deleted_rows
 
         subheader_pointers sas.subheader_pointers
 
         subheaders
 
         full_bytes
-        comp_data_rows = {}
+        comp_data_rows = []
+        
         delete_mask
         has_delete_mask = false
         has_compressed = false
 
-        data_block_count
-        data_block_start
+        
     end
 
 
@@ -44,7 +49,7 @@ classdef page < handle
     %}
 
     methods
-        function obj = page(fid,h,page_index,parent,subheaders)
+        function obj = page(fid,file_header,page_index,logger,subheaders)
             %
             %   h : sas.header
             %
@@ -52,41 +57,70 @@ classdef page < handle
             %Might remove eventually ...
             obj.page_index = page_index;
         
-            %Header processing
-            obj.header = sas.page_header(fid,h);
+            %Page header processing
+            %---------------------------------------------
+            obj.header = sas.page_header(fid,file_header);
 
             obj.data_block_count = obj.header.data_block_count;
             obj.data_block_start = obj.header.data_block_start;
 
             %Page type info processing
-            %-----------------------------
+            %---------------------------------------------
             %
             % - Based on page_type in header, get more info
             % - validate other properties of the header
             obj.page_type_info = sas.page_type_info(obj.header);
+            obj.has_deleted_rows = obj.page_type_info.has_deleted_rows;
 
-            if obj.page_type_info.has_deleted_rows
-                parent.has_deleted_rows = true;
+            page_type = obj.page_type_info.page_type;
+            if page_type == 384
+                logger.has_384 = page_index;
+            elseif page_type == 512
+                logger.has_512 = page_index;
+            elseif page_type == 640
+                logger.has_640 = page_index;
+            elseif page_type == 1024
+                logger.has_1024 = page_index;
+            elseif page_type == 16384
+                logger.has_16384 = page_index;
+            elseif page_type == -28672
+                logger.has_28672 = page_index;
+            end
+
+            %-28672
+            %-> skip ...
+            if obj.page_type_info.page_type == -28672
+                n_remaining = file_header.page_length - obj.header.n_bytes_initial;
+                status = fseek(fid,n_remaining,'cof');
+                if status == -1
+                    error('fseek failed')
+                end
+                return
             end
  
             %When no subheaders adjust file pointer to next page and exit
             %------------------------------------------------------------
             if obj.header.n_subheaders == 0
-                n_remaining = h.page_length - obj.header.n_bytes_initial;
+                n_remaining = file_header.page_length - obj.header.n_bytes_initial;
                 %*** FSEEK ***
                 status = fseek(fid,n_remaining,'cof');
                 if status == -1
                     error('fseek failed')
                 end
-                if obj.page_type_info.has_deleted_rows
+                
+                %This is a bit of a hack. Not sure if deleted is really
+                %present. I think it is. Find example file.
+                if obj.has_deleted_rows
                     status = fseek(fid,obj.header.start_position,'bof');
                     if status == -1
                         error('Unhandled error')
                     end
-                    bytes = fread(fid,h.page_length,'*uint8')';
+                    bytes = fread(fid,file_header.page_length,'*uint8')';
                     obj.full_bytes = bytes;
                     obj.processDeletedMask(subheaders);
-                elseif parent.has_deleted_rows
+                elseif obj.has_deleted_rows
+                    %This is a complete hack that is now "hacked" in
+                    %"sas.file"
                     obj.delete_mask = false(1,obj.data_block_count);
                     obj.has_delete_mask = true;
                 end
@@ -98,7 +132,7 @@ classdef page < handle
             %*** FREAD ***
             bytes = fread(fid,obj.header.n_bytes_all_sub_pointers,'*uint8')';
             n_subs = obj.header.n_subheaders;
-            obj.subheader_pointers = sas.subheader_pointers(h.is_u64,n_subs,bytes);
+            obj.subheader_pointers = sas.subheader_pointers(file_header.is_u64,n_subs,bytes);
 
             %Subheader processing
             %----------------------------------------------------
@@ -120,7 +154,7 @@ classdef page < handle
             if status == -1
                 error('Unhandled error')
             end
-            bytes = fread(fid,h.page_length,'*uint8')';
+            bytes = fread(fid,file_header.page_length,'*uint8')';
             obj.full_bytes = bytes;
 
             [obj.subheaders,obj.comp_data_rows] = subheaders.processPageSubheaders(obj.subheader_pointers,obj,bytes);
@@ -217,5 +251,14 @@ classdef page < handle
         
             end
         end
+    end
+end
+
+function h__seekToNextPage(obj,file_header,page_header)
+    n_remaining = file_header.page_length - page_header.n_bytes_initial;
+    %*** FSEEK ***
+    status = fseek(fid,n_remaining,'cof');
+    if status == -1
+        error('fseek failed')
     end
 end

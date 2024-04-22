@@ -4,3 +4,4 @@
 %       - does header specify these?
 %       - how can you tell if things are dates or numbers?
 % - timezone formatting of header is off
+% - add mex error call for return int

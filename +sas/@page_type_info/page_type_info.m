@@ -8,11 +8,33 @@ classdef page_type_info
         %
         %   TODO: Update ...
         %
-        %Numeric value:
-        % 0 - meta, compressed data
-        % 128 - meta, compressed data, deleted rows
-        % 256 - data only
-        %
+        % -----------------------------------
+        %                   meta, data1, cdata, data2, deleted
+        %      0
+        %    128
+        %    256 
+        %    257
+        %    384 - data2
+        %    512 - data
+        %    640 - mix2     
+        %   1024 - amd
+        %  16384 - meta2
+        % -28672 - comp
+
+        %{
+        %From readstat
+        #define SAS_PAGE_TYPE_META   0x0000
+        #define SAS_PAGE_TYPE_DATA   0x0100  256
+        #define SAS_PAGE_TYPE_MIX    0x0200  512
+                                     0x0280  640
+        #define SAS_PAGE_TYPE_AMD    0x0400 1024
+        #define SAS_PAGE_TYPE_MASK   0x0F00
+        
+        #define SAS_PAGE_TYPE_META2  0x4000
+        #define SAS_PAGE_TYPE_COMP   0x9000
+        %}
+
+
         page_type
         
         %The following properties are based on the page_type value
@@ -36,7 +58,7 @@ classdef page_type_info
             %       .has_compressed_data
             %       .has_deleted_rows
 
-            obj.page_type = page_header.page_type;
+            obj.page_type = double(page_header.page_type);
 
             %Good ref to work off of
             %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileConstants.java#L553
@@ -54,55 +76,44 @@ classdef page_type_info
 
             switch obj.page_type
                 case 0
-                    %meta
                     obj.has_meta = true;
                     obj.has_uncompressed_data = false;
                     obj.has_compressed_data = true;
                     obj.has_deleted_rows = false;
                 case 128
-                    %PAGE_CMETA_TYPE
-                    %
-
-                    %FORM DOC
-                    %seen in: q_del_pandas.sas7bdat
-                    %obj.page_name = 'data';
                     obj.has_meta = true;
                     obj.has_uncompressed_data = false;
                     obj.has_compressed_data = true;
                     obj.has_deleted_rows = true;
-                case {256}
-                    %
-                    %   
-                    %
-                    %767543210 - bit_ids
-                    %100000000 - bit_values
-                    %obj.page_name = 'data';
+                case 256
                     obj.has_meta = false;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
                     obj.has_deleted_rows = false;
                 case 384
-                    %384 - deleted_rows.sas7bdat
-                    %
-                    %data with deleted
+                    %{
+                        'load_log'
+                        'data_page_with_deleted'
+                        'deleted_rows'
+                    %}
                     obj.has_meta = false;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
                     obj.has_deleted_rows = true;
                 case 512
-                    %PAGE_MIX_TYPE_1
-                    %
-                    %uncompressed, no deleted
-
                     obj.has_meta = true;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
                     obj.has_deleted_rows = false;
                 case 640
-                    %PAGE_MIX_TYPE_2
-                    %
-                    %   uncompressed with deleted rows
-
+                    %{
+                    'date_dd_mm_yyyy_copy'
+                    'datetime_deleted_rows'
+                    'deleted_rows'
+                    'load_log'
+                    'all_rand_normal_with_deleted'
+                    'all_rand_normal_with_deleted2'
+                    %}
                     obj.has_meta = true;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
@@ -124,10 +135,9 @@ classdef page_type_info
                     obj.has_missing_column_info = true;
 
                 case 16384
-                    %321098767543210 - bit_ids
-                    %100000000000000 - bit_values
-                    %
-                    %obj.page_name = 'meta';
+                    %{
+                    'test_meta2_page'
+                    %}
 
                     obj.has_meta = true;
                     obj.has_uncompressed_data = false;
@@ -137,6 +147,8 @@ classdef page_type_info
                     %
                     %   TODO: I think we are using uint16 so this
                     %   is wrong ...
+                    %
+                    %   q_del_pandas.sas7bdat
 
                     %q_pandas.sas7bdat
                     %obj.page_name = 'comp';
@@ -147,7 +159,7 @@ classdef page_type_info
                     obj.has_meta = false;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
-                    obj.has_deleted_rows = false;
+                    obj.has_deleted_rows = true;
                 otherwise
                     error('Unrecognized option')
             end

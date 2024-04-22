@@ -13,8 +13,6 @@ file_path = sas.utils.getExampleFilePath('fts0003.sas7bdat');
 [s,f] = sas.readFile(file_path);
 
 
-
-
 file_path = sas.utils.getExampleFilePath('date_dd_mm_yyyy_copy.sas7bdat');
 [s,f] = sas.readFile(file_path);
 
@@ -28,7 +26,7 @@ all_bytes = vertcat(cf.bytes);
 sc = log(double(all_bytes)+1);
 
 
-file_path = sas.utils.getExampleFilePath('many_columns.sas7bdat');
+file_path = sas.utils.getExampleFilePath('all_rand_normal.sas7bdat');
 f = sas.file(file_path);
 [s,f] = sas.readFile(file_path);
 

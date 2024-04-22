@@ -12,6 +12,11 @@ function s = rowsToData(obj,temp_data,delete_mask)
 %Data conversion ...
 %-------------------------------------------------
 c = obj.columns;
+if isempty(c)
+    s = struct([]);
+    return
+end
+
 c_widths_m1 = [c.column_width]-1;
 c_offsets = [c.data_row_offset]+1;
 c_is_numeric = [c.is_numeric];
@@ -113,7 +118,7 @@ for i = 1:n_columns
                 %
                 %   ?? What to do here?
             otherwise
-                
+
                 %error('Unrecognized format: %s',c_formats{i})
 
         end
