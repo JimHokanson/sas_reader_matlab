@@ -6,7 +6,7 @@ classdef pandas
 
     %{
     
-    fp = '/Users/jim/Documents/repos/matlab/example_sas_data_files/data_files/numeric_1000000_2.sas7bdat';
+    fp = '/Users/jim/Documents/repos/matlab/example_sas_data_files/data_files/deleted_rows.sas7bdat';
     pd = sas.testing.pandas();
     t = pd.read_sas(fp);
     t2 = sas.readFile(fp);

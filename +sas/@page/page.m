@@ -26,12 +26,21 @@ classdef page < handle
 
         full_bytes
         comp_data_rows = []
-        
-        delete_mask
-        has_delete_mask = false
-        has_compressed = false
 
-        
+        delete_mask
+
+        %Flag indicating that delete_mask has been set
+        has_delete_mask = false
+
+        %page_type_notes
+        %--------------------
+        has_uncompressed = false %DONE
+        has_meta = false
+        has_compressed = false %DONE
+        has_uncompressed2 = false
+        has_deleted_row_entries = false
+        has_implied_deleted = false
+
     end
 
 
@@ -49,20 +58,23 @@ classdef page < handle
     %}
 
     methods
-        function obj = page(fid,file_header,page_index,logger,subheaders)
+        function obj = page(fid,file_header,page_index,...
+                file_has_deleted_rows,logger,subheaders)
             %
             %   h : sas.header
             %
 
             %Might remove eventually ...
             obj.page_index = page_index;
-        
+
             %Page header processing
             %---------------------------------------------
             obj.header = sas.page_header(fid,file_header);
 
             obj.data_block_count = obj.header.data_block_count;
             obj.data_block_start = obj.header.data_block_start;
+
+            obj.has_uncompressed = obj.data_block_count > 0;
 
             %Page type info processing
             %---------------------------------------------
@@ -90,96 +102,65 @@ classdef page < handle
             %-28672
             %-> skip ...
             if obj.page_type_info.page_type == -28672
-                n_remaining = file_header.page_length - obj.header.n_bytes_initial;
-                status = fseek(fid,n_remaining,'cof');
-                if status == -1
-                    error('fseek failed')
-                end
+                h__seekToNextPage(obj,fid,file_header)
                 return
             end
- 
+
             %When no subheaders adjust file pointer to next page and exit
             %------------------------------------------------------------
             if obj.header.n_subheaders == 0
-                n_remaining = file_header.page_length - obj.header.n_bytes_initial;
-                %*** FSEEK ***
-                status = fseek(fid,n_remaining,'cof');
-                if status == -1
-                    error('fseek failed')
-                end
-                
-                %This is a bit of a hack. Not sure if deleted is really
-                %present. I think it is. Find example file.
-                if obj.has_deleted_rows
-                    status = fseek(fid,obj.header.start_position,'bof');
-                    if status == -1
-                        error('Unhandled error')
-                    end
-                    bytes = fread(fid,file_header.page_length,'*uint8')';
-                    obj.full_bytes = bytes;
-                    obj.processDeletedMask(subheaders);
-                elseif obj.has_deleted_rows
-                    %This is a complete hack that is now "hacked" in
-                    %"sas.file"
-                    obj.delete_mask = false(1,obj.data_block_count);
-                    obj.has_delete_mask = true;
-                end
+                %
+                %   We need to still check for deleted entries. Otherwise
+                %   the only thing left is uncompressed data.
+
+                h__earlyDeleteCheckingAndAdvance(obj,fid,file_header,...
+                    file_has_deleted_rows,subheaders);
                 return
             end
 
             %Subpointer info retrieval
             %----------------------------------------------------------
-            %*** FREAD ***
             bytes = fread(fid,obj.header.n_bytes_all_sub_pointers,'*uint8')';
             n_subs = obj.header.n_subheaders;
-            obj.subheader_pointers = sas.subheader_pointers(file_header.is_u64,n_subs,bytes);
+            obj.subheader_pointers = sas.subheader_pointers(...
+                file_header.is_u64,n_subs,bytes);
 
             %Subheader processing
             %----------------------------------------------------
             %Processing of the subheaders
             %----------------------------------------------------
-            %TODO: Make this better ...
-            %Right now we're reading the entire page
             %
-            %- I think eventually we want to do a more specific meta data read
-            %
-            %Read all if meta data present
-            %
-            %If only data-data, log only what's necessary
-            %
-            %   Low priority for now although this may be useful
-            %   for larger compressed files where we may want to 
             %   
-            status = fseek(fid,obj.header.start_position,'bof');
-            if status == -1
-                error('Unhandled error')
-            end
-            bytes = fread(fid,file_header.page_length,'*uint8')';
-            obj.full_bytes = bytes;
-
-            [obj.subheaders,obj.comp_data_rows] = subheaders.processPageSubheaders(obj.subheader_pointers,obj,bytes);
             
+            h__readAllPageBytes(obj,fid,file_header)
+
+            [obj.subheaders,obj.comp_data_rows] = ...
+                subheaders.processPageSubheaders(obj.subheader_pointers,...
+                obj,obj.full_bytes,logger);
+
             obj.has_compressed = ~isempty(obj.comp_data_rows);
 
             %Deleted mask
             %-------------------------------------------
             obj.processDeletedMask(subheaders);
 
+            %Note, I don't think we need full bytes and could delete
+            %at this point
+
             if obj.page_type_info.has_missing_column_info
+                %TODO
+                logger.has_missing_columns = true;
                 %keyboard
             end
-        end        
+        end
         function processDeletedMask(obj,subheaders)
 
             %   Files with deleted entries:
             %   - date_dd_mm_yyyy_copy.sas7bdat
-            %   - 
-
-            has_deleted_rows = obj.page_type_info.has_deleted_rows;
+            %   - others (TODO)
 
             %https://github.com/troels/pandas/blob/fcb169919b93b95e22630a23817dbcf24e0e7cda/pandas/io/sas/sas7bdat.py
-            %
-            if has_deleted_rows
+            if obj.page_type_info.has_deleted_rows
 
                 %fprintf('wtf batman\n')
 
@@ -219,46 +200,69 @@ classdef page < handle
                 %...
                 %byte 1, bit 7 - 9th row
                 %etc.
-                
+
                 temp = arrayfun(@(x) bitget(x,8:-1:1),delete_bitmap_bytes,'un',0);
                 obj.delete_mask = [temp{:}];
                 obj.has_delete_mask = true;
 
-                %PARSO code
-                %---------------------
-                %{
-                    deletedPointerOffset = PAGE_DELETED_POINTER_OFFSET_X86; //12
-                    subheaderPointerLength = SUBHEADER_POINTER_LENGTH_X86; //12
-                    bitOffset = PAGE_BIT_OFFSET_X86 + 8; //= 16 + 8 = 24
-                    
-                    int alignCorrection = (bitOffset + SUBHEADER_POINTERS_OFFSET + currentPageSubheadersCount
-                            * subheaderPointerLength) % BITS_IN_BYTE;
-                    List<byte[]> vars = getBytesFromFile(new Long[] {deletedPointerOffset},
-                            new Integer[] {PAGE_DELETED_POINTER_LENGTH});
-            
-                    long currentPageDeletedPointer = bytesToInt(vars.get(0));
-                    long deletedMapOffset = bitOffset + currentPageDeletedPointer + alignCorrection
-                            + (currentPageSubheadersCount * subheaderPointerLength)
-                            + ((currentPageBlockCount - currentPageSubheadersCount) * sasFileProperties.getRowLength());
-                    List<byte[]> bytes = getBytesFromFile(new Long[] {deletedMapOffset},
-                        new Integer[] {(int) Math.ceil((currentPageBlockCount - currentPageSubheadersCount) / 8.0)});
-            
-                    byte[] x = bytes.get(0);
-                    for (byte b : x) {
-                        deletedMarkers += String.format("%8s", Integer.toString(b & 0xFF, 2)).replace(" ", "0");
-                    }
-                %}
-        
             end
         end
     end
 end
 
-function h__seekToNextPage(obj,file_header,page_header)
-    n_remaining = file_header.page_length - page_header.n_bytes_initial;
-    %*** FSEEK ***
-    status = fseek(fid,n_remaining,'cof');
-    if status == -1
-        error('fseek failed')
-    end
+function h__readAllPageBytes(obj,fid,file_header)
+
+status = fseek(fid,obj.header.start_position,'bof');
+if status == -1
+    error('Unhandled error')
+end
+bytes = fread(fid,file_header.page_length,'*uint8')';
+obj.full_bytes = bytes;
+
+end
+
+function h__earlyDeleteCheckingAndAdvance(obj,fid,file_header,...
+    file_has_deleted_rows,subheaders)
+
+
+if obj.has_deleted_rows
+    %happens with 384
+    %   - no subheaders but deleted info
+
+    %Might not be the cleanest way to do this. Seek
+    %to beginning, read all bytes, then process deleted.
+    %
+    %Could work on learning how to skip better ...
+    h__readAllPageBytes(obj,fid,file_header)
+    obj.processDeletedMask(subheaders);
+elseif file_has_deleted_rows
+    %
+    %   load_log.sas7bdat
+    %   data_page_with_deleted.sas7bdat
+    %
+    %   happens with 256
+    %
+    %   Essentially getting here indicates that other
+    %   sections have indicated deleted markers but this
+    %   section has no such indication.
+    %
+    %   When not specified assume no rows are to be
+    %   deleted.
+
+    obj.delete_mask = false(1,obj.data_block_count);
+    obj.has_delete_mask = true;
+    h__seekToNextPage(obj,fid,file_header)
+else
+    h__seekToNextPage(obj,fid,file_header)
+end
+end
+
+function h__seekToNextPage(obj,fid,file_header)
+page_header = obj.header;
+n_remaining = file_header.page_length - page_header.n_bytes_initial;
+%*** FSEEK ***
+status = fseek(fid,n_remaining,'cof');
+if status == -1
+    error('fseek failed')
+end
 end

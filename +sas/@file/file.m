@@ -97,7 +97,8 @@ classdef file < handle
             data_n_rows = zeros(1,obj.n_pages);
 
             for i = 1:obj.n_pages
-                p = sas.page(fid,file_header,i,obj.logger,obj.subheaders);
+                p = sas.page(fid,file_header,i,obj.has_deleted_rows,...
+                    obj.logger,obj.subheaders);
                 data_starts(i) = p.header.data_block_start;
                 data_n_rows(i) = p.header.data_block_count;
                 obj.has_deleted_rows = obj.has_deleted_rows || p.has_deleted_rows;

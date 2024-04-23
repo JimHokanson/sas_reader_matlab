@@ -47,7 +47,7 @@ classdef subheaders < handle
             obj.fid = fid;
             obj.page_length = page_length;
         end
-        function [sub_headers, comp_data_rows] = processPageSubheaders(obj,s,page,bytes)
+        function [sub_headers, comp_data_rows] = processPageSubheaders(obj,s,page,bytes,logger)
             %
             %
             %   Utilizing the pointer info, process each sub-header. This
@@ -71,7 +71,8 @@ classdef subheaders < handle
             %This call is just to remove the nesting ...
             %
             %   Could move it to its own file ...
-            [sub_headers, comp_data_rows] = h__processPageSubheaders(obj,s,page,bytes);
+            [sub_headers, comp_data_rows] = h__processPageSubheaders(...
+                obj,s,page,bytes,logger);
 
         end
         function columns = extractColumns(obj)
@@ -120,7 +121,8 @@ classdef subheaders < handle
     end
 end
 
-function [sub_headers, comp_data_rows] = h__processPageSubheaders(obj,s,page,bytes)
+function [sub_headers, comp_data_rows] = h__processPageSubheaders(...
+    obj,s,page,bytes,logger)
 %
 %
 %   Inputs
@@ -159,6 +161,13 @@ page_type_info = page.page_type_info;
 
 n_subs = length(s.offsets);
 
+%Truncation check
+%------------------------------------------------------------------
+%For whatever reason the last "subheader" is set to be null or "truncated"
+%
+%   We check for this here so that we don't over allocate and need to
+%   delete
+
 I = find(sub_comp_flags == 1);
 if length(I) > 1
     error('Expecting only 1 truncated flag')
@@ -170,10 +179,15 @@ elseif length(I) == 1
     end
 end
 
+%What is this
+%------------------------------------------------
+%q_del_pandas
 if any(sub_comp_flags == 5)
-    %TODO: Log
+    %keyboard
 end
 
+%Compression initialization
+%--------------------------------------------------
 Ic = 0;
 compression_flags_present = false;
 if any(sub_comp_flags == 4)
@@ -192,6 +206,9 @@ else
     comp_data_rows = [];
 end
 
+
+%Other allocation
+%-----------------------------------------
 %Note, this is an over-allocation but that's probably fine
 format_headers = cell(1,n_subs);
 format_I = 0;
@@ -203,7 +220,7 @@ format_I = 0;
 sub_headers = cell(1,n_subs);
 sigs = zeros(1,n_subs);
 
-c_count = 0;
+
 for i = 1:n_subs
     offset = sub_offsets(i)+1;
     n_bytes_m1 = sub_lengths(i)-1;
@@ -223,17 +240,19 @@ for i = 1:n_subs
     %Compressed data in header
     %------------------------------------
     if sub_comp_flags(i) == 4
-        c_count = c_count + 1;
         Ic = Ic + 1;
         if obj.compression_mode == "rdc"
             comp_data_rows(:,Ic) = sas.utils.extractRDC(b2,obj.row_length);
         elseif obj.compression_mode == "rle"
-            comp_data_rows(:,Ic) = sas.utils.extractRLE(b2,obj.row_length,c_count);
+            comp_data_rows(:,Ic) = sas.utils.extractRLE(b2,obj.row_length);
         else
             %fts0003.sas7bdat
             obj.logger.implied_rdc = true;
             comp_data_rows(:,Ic) = sas.utils.extractRDC(b2,obj.row_length);
         end
+        continue
+    elseif sub_comp_flags(i) == 5
+        %ignore
         continue
     end
 
@@ -241,6 +260,12 @@ for i = 1:n_subs
     %Parso suggests that the first 4 bytes for u64 might be
     %0 followed by the signature ...
     header_signature = typecast(bytes(offset:offset+3),'uint32');
+    if obj.is_u64
+        h2 = typecast(bytes(offset+4:offset+7),'uint32');
+    else
+        h2 = -1;
+    end
+
     sigs(i) = header_signature;
     %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas7bdat_read.c#L626
 
@@ -249,16 +274,19 @@ for i = 1:n_subs
     %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileParser.java#L87
     switch header_signature
         case 0
+            page.has_uncompressed2 = true;
             obj.logger.zero_sig = true;
             Ic = Ic + 1;
             comp_data_rows(:,Ic) = b2;
             s.logSectionType(i,'0-sub',0);
         case 4143380214 %column-size subheader, F6F6F6F6
+            page.has_meta = true;
             temp = sas.column_size_subheader(b2,obj.is_u64);
             obj.setColSizeSubheader(temp);
             sub_headers{i} = temp;
             s.logSectionType(i,'col-size',header_signature);
         case 4160223223 %row-size subheader, F7F7F7F7
+            page.has_meta = true;
             temp = sas.row_size_subheader(b2,obj.is_u64);
             obj.setRowSizeSubheader(temp);
             sub_headers{i} = temp;
@@ -268,6 +296,7 @@ for i = 1:n_subs
                 comp_data_rows = zeros(obj.row_length,n_subs,'uint8');
             end
         case 4294966270  %column-format subheader, FFFFFBFE
+            page.has_meta = true;
             %n = 1 per column
             format_I = format_I + 1;
             sub_headers{i} = sas.column_format_subheader(b2,obj.is_u64);
@@ -276,6 +305,7 @@ for i = 1:n_subs
             %- label
             s.logSectionType(i,'col-format',header_signature);
         case 4294967290
+            page.has_meta = true;
             %FFFFFFFA - not sure what this is ...
             %
             %   seen with AMD page type
@@ -286,12 +316,14 @@ for i = 1:n_subs
 
             s.logSectionType(i,'unknown FFFFFFFA',header_signature);
         case 4294966272 %signature counts
+            page.has_meta = true;
             %When a particular subheader first and last appears
             temp = sas.signature_counts_subheader(b2,obj.is_u64);
             obj.setSignatureSubheader(temp);
             sub_headers{i} = temp;
             s.logSectionType(i,'sig-counts',header_signature);
         case 4294967292 %-- COLUMN ATTRIBUTES
+            page.has_meta = true;
             %-----------------------------------------
             sub_headers{i} = sas.column_attributes_subheader(b2,obj.is_u64);
             %Note, the col_attr_headers has an array as a property
@@ -307,6 +339,7 @@ for i = 1:n_subs
             %column types (either numeric or character).
             s.logSectionType(i,'col-attr',header_signature);
         case 4294967293 %-- COLUMN TEXT
+            page.has_meta = true;
             sub_headers{i} = sas.column_text_subheader(b2,obj.is_u64,obj.row_size);
 
             %Do we ever have more than 1 of these?
@@ -317,26 +350,65 @@ for i = 1:n_subs
             s.logSectionType(i,'col-text',header_signature);
             obj.compression_mode = sub_headers{i}.compression_type;
         case 4294967294 %-- COLUMN LIST
+            page.has_meta = true;
             sub_headers{i} = sas.column_list_subheader(b2,obj.is_u64);
             obj.col_list = [obj.col_list sub_headers{i}];
             %Unclear what this is ...
             s.logSectionType(i,'col-list',header_signature);
         case 4294967295 %-- COLUMN NAME
+            page.has_meta = true;
             sub_headers{i} = sas.column_name_subheader(b2,obj.is_u64);
             obj.col_name = [obj.col_name sub_headers{i}];
             s.logSectionType(i,'col-name',header_signature);
         otherwise
-            if sub_comp_flags(i) == 5
-                %????
-                s.logSectionType(i,'wtf2',header_signature);
-            else
+            %dates_binary.sas7bdat - u64
+            %dates_longname_binary.sas7bdat - u64
+            %
+            %
+            %When we get here the hex signature ends with 00000
+            %and often with 000000
+            %{
+            %Same values for first two files
+            'FF000000'
+            '01000000'
+            '7F000000'
+            '80000000'
+            '81000000'
+            'FF000000'
+            '01000000'
+            '9FA00000'
+            %}
 
-                s.logSectionType(i,'wtf',header_signature);
-                %Note, this is risky as we may have legit header
-                %although if that happens we will get an error
-                Ic = Ic + 1;
-                comp_data_rows(:,Ic) = b2;
-            end
+            %If we look at u64 and the 2nd 4 bytes you get
+            %41xxxxxx
+
+            %For q_del_pandas.sas7bdat (has flag=5)
+            %'400884F4'
+            %'00000000'
+            %
+            %For comp_deleted.sas7bdat (has flag=5)
+            %'402681F4'
+            %'00000000'
+            %
+            %doubles.sas7bdat, doubles2.sas7bdat
+            %   - all 2nd header is value 0
+            %   
+            %logger.unrecognized_sigs = [logger.unrecognized_sigs; header_signature; h2];
+            
+            % if sub_comp_flags(i) == 5
+            %     %A value of 5 seems to indicate that
+            %     keyboard
+            %     %????
+            %     s.logSectionType(i,'wtf2',header_signature);
+            %     page.page_type_info.page_type
+            % else
+            page.has_uncompressed2 = true;
+            s.logSectionType(i,'wtf',header_signature);
+            %Note, this is risky as we may have legit header
+            %although if that happens we will get an error
+            Ic = Ic + 1;
+            comp_data_rows(:,Ic) = b2;
+            % end
     end
 end
 

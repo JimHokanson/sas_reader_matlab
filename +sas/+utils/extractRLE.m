@@ -1,4 +1,4 @@
-function b3 = extractRLE(b2,row_length,c_count)
+function b3 = extractRLE(b2,row_length)
 %
 %   b3 = sas.utils.extractRLE(b2,row_length);
 %

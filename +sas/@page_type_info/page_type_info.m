@@ -41,6 +41,7 @@ classdef page_type_info
         
         has_meta
         has_uncompressed_data
+        has_subheader_uncompressed_data
         has_compressed_data
         has_deleted_rows    
         has_missing_column_info = false
@@ -81,6 +82,8 @@ classdef page_type_info
                     obj.has_compressed_data = true;
                     obj.has_deleted_rows = false;
                 case 128
+                    %There are occasionally entries
+                    %in the meta here that are completely ignored
                     obj.has_meta = true;
                     obj.has_uncompressed_data = false;
                     obj.has_compressed_data = true;
@@ -95,6 +98,8 @@ classdef page_type_info
                         'load_log'
                         'data_page_with_deleted'
                         'deleted_rows'
+                            - no subheaders
+                            - deleted rows
                     %}
                     obj.has_meta = false;
                     obj.has_uncompressed_data = true;

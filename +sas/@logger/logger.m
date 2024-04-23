@@ -5,6 +5,7 @@ classdef logger < handle
 
     properties
         name = ''
+        has_missing_columns = false
         has_257 = -1
         has_384 = -1
         has_512 = -1
@@ -12,6 +13,11 @@ classdef logger < handle
         has_1024 = -1
         has_16384 = -1
         has_28672 = -1
+
+        unrecognized_sigs = []
+        has_type_5 = false
+
+        %This is for a subheader signature of FA
         fa_page_type = -1
         delayed_compression_initialization = false
         zero_sig = false
