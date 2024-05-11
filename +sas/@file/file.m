@@ -113,7 +113,7 @@ classdef file < handle
             %Column extraction
             %------------------------------------------------
             if obj.subheaders.n_columns ~= 0
-                obj.columns = obj.subheaders.extractColumns();
+                obj.columns = obj.subheaders.extractColumns(obj.header);
                 obj.column_names = {obj.columns.name}';
             end
 
@@ -155,13 +155,20 @@ classdef file < handle
             end
 
             obj.meta_parse_time = toc(h_tic);
-
         end
         function output = readRowFilteredData(obj,varargin)
             error('Not yet implemented')
             %plan is to allow retrieving rows based on a callback 
             %
             %e.g. readRowFilteredData(column_to_filter,@(x) x > 100)
+        end
+        function t = head(obj)
+            t = [];
+            %NYI
+        end
+        function t = tail(obj)
+            t = [];
+            %NYI
         end
         function output = readData(obj,varargin)
             %X Extracts data from the file
@@ -170,6 +177,8 @@ classdef file < handle
             %
             %   Optional Inputs
             %   ---------------
+            %   columns_ignore: cellstr or string array
+            %   columns_keep : cellstr or string array
             %   output_type : default 'table'
             %       - 'table'
             %       - 'struct' - TODO: document
@@ -186,12 +195,17 @@ classdef file < handle
 
             h = tic;
 
-            in.start_stop_rows = [];
-            in.output_type = 'table';
+            in = sas.read_data_options();
+
+            % in.columns_ignore = {};
+            % in.columns_keep = {};
+            % in.start_stop_rows = [];
+            % in.output_type = 'table';
             in = sas.sl.in.processVarargin(in,varargin);
             
             if ~any(strcmp(in.output_type,{'table','struct'}))
-                error('"output_type" option: %s, not recognized',in.output_type)
+                error('"output_type" option: %s, not recognized',...
+                    in.output_type)
             end
 
             output = obj.readDataHelper(in);

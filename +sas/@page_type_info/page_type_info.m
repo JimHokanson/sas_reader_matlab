@@ -2,6 +2,10 @@ classdef page_type_info
     %
     %   Class:
     %   sas.page_type_info
+    %
+    %   See Also
+    %   --------
+    %   sas.page
 
     properties
         %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileConstants.java#L553
@@ -77,6 +81,9 @@ classdef page_type_info
 
             switch obj.page_type
                 case 0
+                    %Contains files with unknown signatures that are
+                    %uncompressed data in the array of subheaders rather
+                    %than in their own section
                     obj.has_meta = true;
                     obj.has_uncompressed_data = false;
                     obj.has_compressed_data = true;

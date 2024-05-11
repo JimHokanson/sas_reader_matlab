@@ -1,21 +1,25 @@
 function f003_loadTesting
 
-%TODO: have flags for ignoring problem files and big endian
+profile on
+
 file_paths = sas.utils.getExampleFilePaths(...
     'include_big_endian',false,'include_corrupt_files',false);
-for i = 1:length(file_paths)
+n_files = length(file_paths);
+
+char_sets = cell(n_files,1); 
+names = cell(n_files,1);  
+
+for i = 1:n_files
     [~,name] = fileparts(file_paths{i});
+    names{i} = name;
     fprintf('%s\n',name)
-    [s,f] = sas.readFile(file_paths{i});
-    if ~isempty(f.logger.unrecognized_sigs)
-        %keyboard
-    end
-    %wtf{end+1} = f.logger.getStruct();
+    fp = file_paths{i};
+    [s,f] = p.read_sas(fp);
+    [s,f] = sas.readFile(fp);
+    char_sets{i} = f.header.character_encoding_name;
 end
-
-
-%t = struct2table(s2);
-%has_384 = [s2.has_384];
+profile off
+profile viewer
 
 
 

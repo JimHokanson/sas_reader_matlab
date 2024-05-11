@@ -16,7 +16,6 @@ classdef logger < handle
 
         unrecognized_sigs = []
         has_type_5 = false
-
         %This is for a subheader signature of FA
         fa_page_type = -1
         delayed_compression_initialization = false

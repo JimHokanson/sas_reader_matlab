@@ -2,6 +2,12 @@ classdef pandas
     %
     %   Class:
     %   sas.testing.pandas
+    %
+    %   Apparently Pandas read_sas doesn't support automatic
+    %   encoding detection which means you get raw bytes back :/
+    %
+    %   
+    %   
 
 
     %{
@@ -15,8 +21,6 @@ classdef pandas
 
     %{
     python_env = pyenv()
-
-    wtf = pyrun(["import pandas as pd","pd.__version__"]);
 
     %https://www.mathworks.com/support/requirements/python-compatibility.html
     %}

@@ -42,7 +42,7 @@ classdef column < handle
     end
 
     methods
-        function obj = column(i,format_h,name_h,all_text_h,attr_h)
+        function obj = column(i,format_h,name_h,all_text_h,attr_h,file_header)
             %
             %   format_h : length 1 by design
             %   name_h : length 1, arrays of length n_columns
@@ -68,7 +68,8 @@ classdef column < handle
             I1 = name_h.text_offset(i);
             I2 = I1 + name_h.text_length(i)-1;
 
-            obj.name = char(text_h.bytes(I1:I2));
+            obj.name = native2unicode(text_h.bytes(I1:I2),...
+                file_header.character_encoding_name);
 
             %Attribute processing
             %-----------------------------------------------

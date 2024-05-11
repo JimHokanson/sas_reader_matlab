@@ -2,7 +2,17 @@
 #include <stdint.h>
 #include <string.h>
 
+//  Compiling steps
+//  cd to this directory
+//  mex extractRDC_mex.c
+//  move resulting file to private
 
+//The code below is from readstat. It is of slightly different format
+//than other implementations I've seen but it seems to work. 
+//
+//I've modified it slightly to have memory allocation outside the function
+//and I've removed the enumerated errors. I should go in and make those
+//more specific but it is low priority as any error here is hard to interpret
 
 int sas7bdat_parse_subheader_rdc(const char *in_buffer, size_t len, char *buffer, size_t row_length) {
     int retval = 0;
@@ -87,13 +97,13 @@ int sas7bdat_parse_subheader_rdc(const char *in_buffer, size_t len, char *buffer
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     // Check input and output arguments
     if (nrhs != 2) {
-        mexErrMsgIdAndTxt("MATLAB:fill_array:nrhs", "Two inputs required.");
+        mexErrMsgIdAndTxt("sas_reader:extractRDC:nrhs", "Two inputs required.");
     }
     if (!mxIsUint8(prhs[0]) || mxGetNumberOfElements(prhs[0]) < 1) {
-        mexErrMsgIdAndTxt("MATLAB:fill_array:notUint8Array", "Input must be a non-empty uint8 array.");
+        mexErrMsgIdAndTxt("sas_reader:extractRDC:notUint8Array", "Input must be a non-empty uint8 array.");
     }
     if (!mxIsDouble(prhs[1]) || mxIsComplex(prhs[1]) || mxGetNumberOfElements(prhs[1]) != 1) {
-        mexErrMsgIdAndTxt("MATLAB:fill_array:notDoubleScalar", "Input must be a noncomplex double scalar.");
+        mexErrMsgIdAndTxt("sas_reader:extractRDC:notDoubleScalar", "Input must be a noncomplex double scalar.");
     }
     
     // Get input data
@@ -105,7 +115,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     plhs[0] = mxCreateNumericMatrix(1, (mwSize)row_length, mxUINT8_CLASS, mxREAL);
     uint8_t *outputArray = (uint8_t *) mxGetData(plhs[0]);
 
-    sas7bdat_parse_subheader_rdc(inputArray,inbuff_len,outputArray,row_length);
+    int ret_val = sas7bdat_parse_subheader_rdc(inputArray,inbuff_len,outputArray,row_length);
+
+    if (ret_val != 0){
+        mexErrMsgIdAndTxt("sas_reader:extractRDC:algorithm", "Decompression algorithm failed");
+    }
 
 }
 

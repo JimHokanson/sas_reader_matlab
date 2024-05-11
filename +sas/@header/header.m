@@ -225,6 +225,7 @@ classdef header < handle
                 case 69
                     name = "MACROMAN";
                 case 70
+                    %unsupported ...
                     name = "MACARABIC";
                 case 71
                     name = "MACHEBREW";

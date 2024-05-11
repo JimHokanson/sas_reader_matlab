@@ -1,4 +1,4 @@
-function [t,file] = readFile(file_path)
+function [t,file] = readFile(file_path,varargin)
 %X read file and load data into a table
 %
 %   This function loads the file and returns data in one call. If you would
@@ -30,6 +30,9 @@ function [t,file] = readFile(file_path)
 %   Interfaces to examine:
 %   https://haven.tidyverse.org/reference/read_sas.html
 
+in.parser = 'matlab';
+in = sas.sl.in.processVarargin(in,varargin);
+
 persistent start_path
 
 if nargin == 0
@@ -51,8 +54,18 @@ end
 
 start_path = fileparts(file_path);
 
-file = sas.file(file_path);
-t = file.readData('output_type','table');
+switch in.parser
+    case 'matlab'
+        file = sas.file(file_path);
+        t = file.readData('output_type','table');
+    case 'pandas'
+        pd = sas.testing.pandas();
+        t = pd.read_sas(file_path);
+        file = [];
+    case 'parso'
+        p = sas.testing.parso();
+        [t,file] = p.read_sas(file_path);
+end
 
 
 end

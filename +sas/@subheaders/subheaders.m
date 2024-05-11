@@ -75,7 +75,7 @@ classdef subheaders < handle
                 obj,s,page,bytes,logger);
 
         end
-        function columns = extractColumns(obj)
+        function columns = extractColumns(obj,file_header)
             %Creation of the column entries
             %----------------------------------------------
             %
@@ -85,7 +85,7 @@ classdef subheaders < handle
             cols = cell(1,obj.n_columns);
             for i = 1:obj.n_columns
                 cols{i} = sas.column(i,formats(i),obj.col_name,...
-                    obj.col_text,obj.col_attr);
+                    obj.col_text,obj.col_attr,file_header);
             end
             columns = [cols{:}];
         end
@@ -121,7 +121,7 @@ classdef subheaders < handle
     end
 end
 
-function [sub_headers, comp_data_rows] = h__processPageSubheaders(...
+function [sub_headers, uncompressed_data] = h__processPageSubheaders(...
     obj,s,page,bytes,logger)
 %
 %
@@ -200,10 +200,10 @@ if any(sub_comp_flags == 4)
         %
         compression_flags_present = true;
     else
-        comp_data_rows = zeros(obj.row_length,n_subs,'uint8');
+        uncompressed_data = zeros(obj.row_length,n_subs,'uint8');
     end
 else
-    comp_data_rows = [];
+    uncompressed_data = [];
 end
 
 
@@ -242,13 +242,19 @@ for i = 1:n_subs
     if sub_comp_flags(i) == 4
         Ic = Ic + 1;
         if obj.compression_mode == "rdc"
-            comp_data_rows(:,Ic) = sas.utils.extractRDC(b2,obj.row_length);
+            %TODO: Fix mex 
+            uncompressed_data(:,Ic) = sas.utils.extractRDC(b2,obj.row_length);
         elseif obj.compression_mode == "rle"
-            comp_data_rows(:,Ic) = sas.utils.extractRLE(b2,obj.row_length);
+            uncompressed_data(:,Ic) = sas.utils.extractRLE(b2,obj.row_length);
         else
-            %fts0003.sas7bdat
+            %
+            %   Not sure if there is somewhere else to extract the
+            %   compression type but it seems like the "default" is binary
+            %
+            %   files:
+            %   - fts0003.sas7bdat
             obj.logger.implied_rdc = true;
-            comp_data_rows(:,Ic) = sas.utils.extractRDC(b2,obj.row_length);
+            uncompressed_data(:,Ic) = sas.utils.extractRDC(b2,obj.row_length);
         end
         continue
     elseif sub_comp_flags(i) == 5
@@ -256,28 +262,20 @@ for i = 1:n_subs
         continue
     end
 
-
-    %Parso suggests that the first 4 bytes for u64 might be
-    %0 followed by the signature ...
     header_signature = typecast(bytes(offset:offset+3),'uint32');
-    if obj.is_u64
-        h2 = typecast(bytes(offset+4:offset+7),'uint32');
-    else
-        h2 = -1;
-    end
+    % if obj.is_u64
+    %     h2 = typecast(bytes(offset+4:offset+7),'uint32');
+    % else
+    %     h2 = -1;
+    % end
 
     sigs(i) = header_signature;
-    %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas7bdat_read.c#L626
-
-
-    %List from Parso
-    %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileParser.java#L87
     switch header_signature
         case 0
             page.has_uncompressed2 = true;
             obj.logger.zero_sig = true;
             Ic = Ic + 1;
-            comp_data_rows(:,Ic) = b2;
+            uncompressed_data(:,Ic) = b2;
             s.logSectionType(i,'0-sub',0);
         case 4143380214 %column-size subheader, F6F6F6F6
             page.has_meta = true;
@@ -291,18 +289,23 @@ for i = 1:n_subs
             obj.setRowSizeSubheader(temp);
             sub_headers{i} = temp;
             s.logSectionType(i,'row-size',header_signature);
+            %
+            %   Sometimes we have compressed data on the same page as the
+            %   row-size subheader but we can't initialize the output until
+            %   we know the final row length. Note that thus far this
+            %   subheader has always come before the compressed data.
+            %   Coming afterwards would likely indicate an error with the
+            %   writer.
             if compression_flags_present
                 obj.logger.delayed_compression_initialization = true;
-                comp_data_rows = zeros(obj.row_length,n_subs,'uint8');
+                uncompressed_data = zeros(obj.row_length,n_subs,'uint8');
             end
         case 4294966270  %column-format subheader, FFFFFBFE
-            page.has_meta = true;
             %n = 1 per column
+            page.has_meta = true;
             format_I = format_I + 1;
             sub_headers{i} = sas.column_format_subheader(b2,obj.is_u64);
             format_headers(format_I) = sub_headers(i);
-            %- format
-            %- label
             s.logSectionType(i,'col-format',header_signature);
         case 4294967290
             page.has_meta = true;
@@ -361,59 +364,32 @@ for i = 1:n_subs
             obj.col_name = [obj.col_name sub_headers{i}];
             s.logSectionType(i,'col-name',header_signature);
         otherwise
+            %
+            %   Note this tends to come after sections with
+            %   a signature of 0 or with compressed data
+            %
             %dates_binary.sas7bdat - u64
             %dates_longname_binary.sas7bdat - u64
-            %
-            %
-            %When we get here the hex signature ends with 00000
-            %and often with 000000
-            %{
-            %Same values for first two files
-            'FF000000'
-            '01000000'
-            '7F000000'
-            '80000000'
-            '81000000'
-            'FF000000'
-            '01000000'
-            '9FA00000'
-            %}
-
-            %If we look at u64 and the 2nd 4 bytes you get
-            %41xxxxxx
-
-            %For q_del_pandas.sas7bdat (has flag=5)
-            %'400884F4'
-            %'00000000'
-            %
-            %For comp_deleted.sas7bdat (has flag=5)
-            %'402681F4'
-            %'00000000'
-            %
-            %doubles.sas7bdat, doubles2.sas7bdat
-            %   - all 2nd header is value 0
-            %   
+            %doubles.sas7bdat, doubles2.sas7bdat - not u64
+            
             %logger.unrecognized_sigs = [logger.unrecognized_sigs; header_signature; h2];
             
-            % if sub_comp_flags(i) == 5
-            %     %A value of 5 seems to indicate that
-            %     keyboard
-            %     %????
-            %     s.logSectionType(i,'wtf2',header_signature);
-            %     page.page_type_info.page_type
-            % else
             page.has_uncompressed2 = true;
-            s.logSectionType(i,'wtf',header_signature);
+            s.logSectionType(i,'uncompressed2',header_signature);
             %Note, this is risky as we may have legit header
-            %although if that happens we will get an error
+            %although if that happens we will most likely get an error
+            %due to the size mismatch
             Ic = Ic + 1;
-            comp_data_rows(:,Ic) = b2;
-            % end
+            try
+                uncompressed_data(:,Ic) = b2;
+            catch
+                error('Unrecognized signature for subheader')
+            end
     end
 end
 
-if size(comp_data_rows,2) > Ic
-    comp_data_rows(:,Ic+1:end) = [];
+if size(uncompressed_data,2) > Ic
+    uncompressed_data(:,Ic+1:end) = [];
 end
 
 obj.col_format = [obj.col_format format_headers{1:format_I}];

@@ -1,5 +1,8 @@
 function output = readDataHelper(obj,in)
 %
+%   This is called by sas.file>readData
+%
+%   Basically we remove all of the indendation with this approach
 %
 %   output = readDataHelper(obj,in)
 %
@@ -8,6 +11,11 @@ function output = readDataHelper(obj,in)
 %   -------------------
 %   1. hoist is_deleted check out
 %   2. hoist empty rows check out
+%
+%   See Also
+%   --------
+%   sas.file
+%   
 
 has_deleted_rows = obj.has_deleted_rows;
 if obj.has_deleted_rows
@@ -205,6 +213,7 @@ switch in.output_type
         output = table;
         for i = 1:length(s)
             name = s(i).name;
+            %This may not be the most efficient ...
             output.(name) = s(i).values;
         end
     case 'struct'

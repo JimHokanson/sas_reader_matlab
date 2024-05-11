@@ -1,13 +1,16 @@
-function s = rowsToData(obj,temp_data,delete_mask)
+function s = rowsToData(obj,temp_data,row_delete_mask,column_keep_mask)
 %
 %   Inputs
 %   ------
 %   temp_data
+%   delete_mask
+%   column_keep_mask
 %
 %
 %   See Also
 %   --------
-%   
+%   sas.file
+%   sas.file>readDataHelper
 
 %Data conversion ...
 %-------------------------------------------------
@@ -17,6 +20,12 @@ if isempty(c)
     return
 end
 
+%TODO: Do column filtering here ...
+
+
+%Extraction of all properties needed for parsing
+c_names = {c.name};
+c_labels = {c.label};
 c_widths_m1 = [c.column_width]-1;
 c_offsets = [c.data_row_offset]+1;
 c_is_numeric = [c.is_numeric];
@@ -24,8 +33,8 @@ c_formats = {c.format};
 n_columns = length(c);
 n_rows = size(temp_data,2);
 
-s = struct('id',num2cell(1:n_columns),'name',{c.name},...
-    'label',{c.label},'values',[]);
+s = struct('id',num2cell(1:n_columns),'name',c_names,...
+    'label',c_labels,'values',[]);
 
 has_deleted_rows = obj.has_deleted_rows;
 
@@ -37,8 +46,13 @@ for i = 1:n_columns
         %or could just be a number
         
         %data_rows are columns
-        column_data_bytes = zeros(8,n_rows,'uint8');
-        column_data_bytes(8-c_widths_m1(i):8,:) = temp_data(I1:I2,:);
+        if c_widths_m1(i) == 7
+            column_data_bytes = temp_data(I1:I2,:);
+        else
+            column_data_bytes = zeros(8,n_rows,'uint8');
+            column_data_bytes(8-c_widths_m1(i):8,:) = temp_data(I1:I2,:);
+        end
+        
         s(i).values = typecast(column_data_bytes(:),'double');
         
     
@@ -117,6 +131,8 @@ for i = 1:n_columns
                 %   seconds since midnight
                 %
                 %   ?? What to do here?
+            case 'Z'
+                % Writes standard numeric data with leading 0s.
             otherwise
 
                 %error('Unrecognized format: %s',c_formats{i})
@@ -129,21 +145,56 @@ for i = 1:n_columns
         %and temporary operations
 
         %data rows are columns
+
+        %{
+        %old code
         column_data_bytes = temp_data(I1:I2,:)';
+        temp = string(char(column_data_bytes));
+        s(i).values = strtrim(temp);
+        %}
         
         %data rows are rows
         %{
             column_data_bytes = temp_data(:,I1:I2);
         %}
 
+        column_data_bytes = temp_data(I1:I2,:);
+
+        encoding = obj.header.character_encoding_name;
+
+        %TODO: Add other single page maps
+        if encoding == "WINDOWS-1252"
+            bytes = uint8(1:255);
+            %Note, windows-1252 is a 1 byte map so it is rather efficient
+            %to do a lookup.
+
+            temp = native2unicode(bytes,"windows-1252");
+            char_map = uint16(temp);
+
+            fixed_bytes = char_map(column_data_bytes);
+
+            values = string(char(fixed_bytes'));
+        else
+            temp = cell(n_rows,1);
+            for j = 1:n_rows
+               temp{j} = native2unicode(column_data_bytes(:,j),encoding)'; 
+            end
+            values = string(strtrim(temp));
+        end
+
+        %row_array = (1:n_rows)';
+        %temp = arrayfun(@(x) native2unicode(column_data_bytes(:,x),encoding)',row_array,'un',0);
+
+        values = strip(values,'right');
+        
         %TODO: encoding
         %native2unicode
         %TODO: remove trailing spaces ...
-        temp = string(char(column_data_bytes));
-        s(i).values = strtrim(temp);
+
+        s(i).values = values;
     end
     if has_deleted_rows
-        s(i).values(delete_mask) = [];
+        s(i).values(row_delete_mask) = [];
     end
 end
 
