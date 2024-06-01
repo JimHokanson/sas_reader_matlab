@@ -6,9 +6,9 @@ classdef pandas
     %   Apparently Pandas read_sas doesn't support automatic
     %   encoding detection which means you get raw bytes back :/
     %
-    %   
-    %   
-
+    %   This can be accessed in the main sas reading code via:
+    %   t = sas.readFile(file_path,'parser','pandas')
+     
 
     %{
     
@@ -35,6 +35,7 @@ classdef pandas
         end
         function t = read_sas(obj,file_path)
             df = obj.pd.read_sas(file_path);
+            t = [];
             t = sas.utils.dateframeToTable(df);
         end
     end

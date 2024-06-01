@@ -1,5 +1,5 @@
 
-// This version works, simplifying in 4
+// V5 is like V4 but has removed many of the comments
 
 //https://www.mathworks.com/help/matlab/apiref/matlab.data.arrayfactory.html
 //
@@ -35,12 +35,6 @@
 //       - returns: TypedArray<T>
 
 
-#include "mex.hpp"
-#include "mexAdapter.hpp"
-#include <cstring>
-
-namespace md = matlab::data;
-namespace mx = matlab::mex;
 
 /*
 
@@ -49,7 +43,7 @@ temp = repmat(temp,1,10000);
 N = 10;
 tic
 for i = 1:N
-temp2 = copy_test4(temp);
+temp2 = copy_test5(temp);
 end
 toc/N
 
@@ -85,6 +79,15 @@ toc/N
 //
 //
 
+
+
+#include "mex.hpp"
+#include "mexAdapter.hpp"
+#include <cstring>
+
+namespace md = matlab::data;
+namespace mx = matlab::mex;
+
 class MexFunction : public mx::Function {
     md::ArrayFactory factory;
     std::shared_ptr<matlab::engine::MATLABEngine> matlabPtr = getEngine();
@@ -117,58 +120,6 @@ public:
         }
 
         outputs[0] = myArray;
-
-
-        /*
-
-        //std::u16string
-        //std::char16_t;
-
-        md::buffer_ptr_t<char16_t> temp_buffer = factory.createBuffer<char16_t>(10);
-        //md::buffer_ptr_t<std::u16string> temp_buffer = factory.createBuffer<std::u16string>(10);
-
-        //md::buffer_ptr_t<uint16_t> temp_buffer = factory.createBuffer<uint16_t>(10);
-        std::memcpy(temp_buffer.get(), input_buffer.get()+40, 10*2);
-
-        //md::TypedArray<md::MATLABString> temp_string = factory.createArrayFromBuffer<md::MATLABString>({1, 10}, std::move(temp_buffer));
-
-        //std::u16string test = u"testing";
-
-        //myArray[0] = temp_string; 
-        myArray[0] = temp_buffer.get();
-        //myArray[0] = test;
-        //myArray[0] = md::MATLABString(u"east");
-        myArray[1] = md::MATLABString(u"west");
-        outputs[0] = myArray;
-
-        */
-              
-        /*
-		f.createCharArray("MATLAB Cell Array"),
-		f.createArray<double>({ 2,2 }, { 1.2, 2.2, 3.2, 4.2 });
-
-        for (size_t i = 0; i < n_cols; ++i){
-
-            double sum = 0.0;
-            for (size_t j = 0; j < numCols; ++j) {
-                sum += inputMatrix[i][j];
-            }
-            outputArray[i] = sum;
-        }
-        
-
-        
-
-        md::buffer_ptr_t<uint16_t> temp_buffer = factory.createBuffer<uint16_t>(10);
-
-        std::memcpy(temp_buffer.get(), input_buffer.get()+4, 10*2);
-
-        //md::TypedArray<uint16_t> outputArray = factory.createArrayFromBuffer<uint16_t>({1, 10}, std::move(temp_buffer));
-
-        // Return the MATLAB array
-        //outputs[0] = std::move(outputArray);
-        outputs[0] = factory.createArrayFromBuffer<uint16_t>({1, 10}, std::move(temp_buffer));
-        */
 
     }
 private:

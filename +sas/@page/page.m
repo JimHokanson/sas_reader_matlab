@@ -6,6 +6,8 @@ classdef page < handle
     %   See Also
     %   --------
     %   sas.file
+    %   sas.page_hader
+    %   sas.header
 
     properties
         %count on which page is being processed, starting at 1

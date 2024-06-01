@@ -3,7 +3,10 @@ function [t,file] = readFile(file_path,varargin)
 %
 %   This function loads the file and returns data in one call. If you would
 %   like more control over the data returned load the file and then call a
-%   data retrieval method (TODO: point to documentation)
+%   data retrieval method:
+%       
+%       f = sas.file(file_path)
+%       t = f.readData ...
 %
 %   Calling forms
 %   -------------
@@ -30,6 +33,7 @@ function [t,file] = readFile(file_path,varargin)
 %   Interfaces to examine:
 %   https://haven.tidyverse.org/reference/read_sas.html
 
+%Note, I'm not advertising this but it works
 in.parser = 'matlab';
 in = sas.sl.in.processVarargin(in,varargin);
 

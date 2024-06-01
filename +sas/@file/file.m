@@ -6,6 +6,8 @@ classdef file < handle
     %   See Also
     %   --------
     %   sas.readFile
+    %   sas.file>readDataHelper
+    %   sas.file>rowsToData
 
     properties
         file_path
@@ -22,8 +24,8 @@ classdef file < handle
         subheaders sas.subheaders
 
         meta_parse_time
-        data_starts %for fseek
-        data_n_rows
+        data_start_per_page %for fseek
+        n_rows_per_page
 
         n_rows
         bytes_per_row
@@ -71,6 +73,13 @@ classdef file < handle
             %   This is in contrast to a file structure which puts that
             %   type of information in the main header.
             %   
+            %   Our strategy is to have a single "handle" object that gets
+            %   passed from page to page and that gets populated as
+            %   file-level information comes in and that is utilized as
+            %   required (when new data are encountered). We currently
+            %   assume that all relevant population is done prior to any 
+            %   utilization that requires that populated info.
+
             obj.subheaders = sas.subheaders(obj,fid,file_header.is_u64,...
                 file_header.page_length,obj.logger);
 
@@ -82,7 +91,7 @@ classdef file < handle
             %   info properly and eventually I just settled on reading all
             %   pages.
             %
-            %   Current reading approach (may change)
+            %   Current reading approach (may change):
             %   - All subheaders on a page are parsed, this includes
             %   compressed data as well as uncompressed data that is
             %   interleaved with the compressed data.
@@ -90,7 +99,7 @@ classdef file < handle
             %   noted as such. In particular the start of the data and the
             %   # of rows are logged.
 
-            obj.n_pages = double(file_header.page_count);
+            obj.n_pages = file_header.page_count;
             all_pages = cell(1,obj.n_pages);
 
             data_starts = zeros(1,obj.n_pages);
@@ -107,8 +116,8 @@ classdef file < handle
 
             obj.all_pages = [all_pages{:}];
 
-            obj.data_starts = data_starts;
-            obj.data_n_rows = data_n_rows;
+            obj.data_start_per_page = data_starts;
+            obj.n_rows_per_page = data_n_rows;
 
             %Column extraction
             %------------------------------------------------
@@ -128,7 +137,17 @@ classdef file < handle
             %Delete mask checking
             %--------------------------------------------
             %
-            %   This is currently a pain point.
+            %   This is currently a pain point. If one page has delete
+            %   information but another does not it becomes somewhat
+            %   awkward to handle the mix. Thus here if one page has the 
+            %   delete info we make sure all pages do.
+            %
+            %   TODO: I think ideally this would be in the page
+            %   methods
+            %       - createNullDeleteInfo()
+            %
+            %   Example files of where this happens?
+            %   
 
             has_delete_mask = [obj.all_pages.has_delete_mask];
             any_delete = any(has_delete_mask);
@@ -162,13 +181,66 @@ classdef file < handle
             %
             %e.g. readRowFilteredData(column_to_filter,@(x) x > 100)
         end
-        function t = head(obj)
-            t = [];
-            %NYI
+        function t = head(obj,stop_row)
+            %
+            %   t = head(obj,*stop_row)
+            %
+            %   Inputs
+            %   ------
+            %   stop_row : default 5
+            %       By default we show only the first 5 rows
+            %
+            %   See Also
+            %   --------
+            %   sas.file>tail
+
+            arguments
+                obj
+                stop_row = 5;
+            end
+
+            if stop_row > obj.n_rows
+                stop_row = obj.n_rows;
+            end
+            if stop_row == 0
+                start_row = 0;
+            else
+                start_row = 1;
+            end
+
+            t = obj.readData('start_stop_rows',[start_row stop_row]);
         end
-        function t = tail(obj)
-            t = [];
-            %NYI
+        function t = tail(obj,n_rows_back)
+            %
+            %   t = tail(obj,*stop_row)
+            %
+            %   Inputs
+            %   ------
+            %   n_rows_back : default 5
+            %       By default we show only the last 5 rows
+            %
+            %   See Also
+            %   --------
+            %   sas.file>head
+
+            arguments
+                obj
+                n_rows_back = 5;
+            end
+
+            stop_row = obj.n_rows;
+            start_row = stop_row - n_rows_back + 1;
+
+            if start_row < 1
+                if obj.n_rows == 0
+                    start_row = 0;
+                else
+                    start_row = 1;
+                end
+                stop_row = obj.n_rows;
+            end
+
+            t = obj.readData('start_stop_rows',[start_row stop_row]);
         end
         function output = readData(obj,varargin)
             %X Extracts data from the file
@@ -189,9 +261,20 @@ classdef file < handle
             %   Examples
             %   --------
             %   %1) Read rows 1000 through 2000 as a table
-            %   output = f.readData('start_stop_rows',[1000 2000])
+            %   f = sas.file(fp);
+            %   t = f.readData('start_stop_rows',[1000 2000])
             %
-            %   
+            %   %2) Keeping only certain columns
+            %   t = f.readData('columns_keep',["datetime","value"]);
+            %       %or equivalently:
+            %   t = f.readData('columns_keep',{'datetime','value'});
+            %       %or equivalently:
+            %   options = sas.read_data_options(); %() is optional
+            %   options.columns_keep = ["datetime","value"];
+            %   t = f.readData(options);
+            %
+            %   %3) Removing certain columns
+            %   t = f.readData('columns_ignore',["subjectid","facility"]);
 
             h = tic;
 
@@ -211,7 +294,6 @@ classdef file < handle
             output = obj.readDataHelper(in);
 
             obj.last_data_read_parse_time = toc(h);
-
         end
     end
 end

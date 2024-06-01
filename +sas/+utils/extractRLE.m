@@ -12,8 +12,11 @@ function b3 = extractRLE(b2,row_length)
 %
 %   See Also
 %   --------
+%   sas.utils.extractRDC
 %   sas.subheaders
 %   sas.subheaders>processPageSubheaders
+%   
+%   
 
 
 %https://github.com/pandas-dev/pandas/blob/b1525c4a3788d161653b04a71a84e44847bedc1b/pandas/_libs/sas.pyx#L61
