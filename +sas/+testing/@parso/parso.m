@@ -27,6 +27,15 @@ classdef parso < handle
 
         function [t,f] = read_sas(obj,file_path)
             stream = java.io.FileInputStream(file_path);
+
+            %If this fails it may be beacuse you haven't added the jars to
+            %your java path
+            %TODO: Make this easier ...
+            %{
+            javaaddpath('/Users/jim/Documents/repos/matlab/sas_reader_matlab/java/parso-2.0.14.jar')
+            javaaddpath('/Users/jim/Documents/repos/matlab/sas_reader_matlab/java/slf4j-api-1.7.5.jar')
+            %}
+
             reader = com.epam.parso.impl.SasFileReaderImpl(stream);
             data = reader.readAll();
 

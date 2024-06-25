@@ -35,8 +35,11 @@ classdef pandas
         end
         function t = read_sas(obj,file_path)
             df = obj.pd.read_sas(file_path);
-            t = [];
-            t = sas.utils.dateframeToTable(df);
+            if verLessThan('matlab','24')
+                t = sas.utils.dateframeToTable(df);
+            else
+                t = table(df);
+            end
         end
     end
 end
