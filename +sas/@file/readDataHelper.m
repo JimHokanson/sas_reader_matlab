@@ -1,5 +1,8 @@
-function output = readDataHelper(obj,in)
+function output = readDataHelper(obj,options)
 %
+%   This is called by sas.file>readData
+%
+%   Basically we remove all of the indendation with this approach
 %
 %   output = readDataHelper(obj,in)
 %
@@ -8,6 +11,16 @@ function output = readDataHelper(obj,in)
 %   -------------------
 %   1. hoist is_deleted check out
 %   2. hoist empty rows check out
+%
+%   See Also
+%   --------
+%   sas.file
+%   
+
+arguments
+    obj sas.file
+    options sas.read_data_options
+end
 
 has_deleted_rows = obj.has_deleted_rows;
 if obj.has_deleted_rows
@@ -25,16 +38,14 @@ if obj.has_compression
     %
     %   Although below could be a pages thing too ...
     all_p = obj.all_pages;
-    temp = [all_p.comp_data_rows];
-    temp_data = [temp{:}];
+    temp_data = [all_p.comp_data_rows];
 
-    if ~isempty(in.start_stop_rows)
-        h__startStopRowCheck(obj,in.start_stop_rows)
+    if ~isempty(options.start_stop_rows)
+        h__startStopRowCheck(obj,options.start_stop_rows)
 
         keyboard
     end
 else
-    n_pages = obj.n_pages;
     %Note the "2" at the end of the variables is simply to avoid
     %MATLAB complaining about local variables intead of properties
     bytes_per_row = obj.bytes_per_row;
@@ -50,22 +61,20 @@ else
     %
     %Storage:
     %
-    %   a1  a2  a3   -> a,b,c -> different columns
-    %   a1  a2  a3   -> 1,2,3 -> first sample, 2nd sample, etc.
+    %   a1  a2  a3   -> a,b,c -> different data columns
+    %   a1  a2  a3   -> 1,2,3 -> first row, 2nd row, etc.
     %   b1  b2  b3
     %   b1  b2  b3
     %
 
-    n_rows_per_page = obj.data_n_rows;
+    n_rows_per_page = obj.n_rows_per_page;
     
-    
+    if ~isempty(options.start_stop_rows)
 
-    if ~isempty(in.start_stop_rows)
+        h__startStopRowCheck(obj,options.start_stop_rows)
 
-        h__startStopRowCheck(obj,in.start_stop_rows)
-
-        I1 = in.start_stop_rows(1);
-        I2 = in.start_stop_rows(2);
+        I1 = options.start_stop_rows(1);
+        I2 = options.start_stop_rows(2);
         n_rows_out = I2 - I1 + 1;
         %TODO: Check the range of I1 and I2
         temp_data = zeros(bytes_per_row,n_rows_out,'uint8');
@@ -110,7 +119,7 @@ else
         %--------------------------------
         last_read_row = 0;
         last_set_byte = 0;
-        [temp_data1,delete_mask1] = readUncompressedPages(obj,temp_data1,delete_mask1,pageI1,pageI1,last_read_row,last_set_byte);
+        [temp_data1,delete_mask1] = h__readUncompressedPages(obj,temp_data1,delete_mask1,pageI1,pageI1,last_read_row,last_set_byte);
         
         n1 = keep1_stopI - keep1_startI + 1;
         temp_data(:,1:n1) = temp_data1(:,keep1_startI:keep1_stopI);
@@ -132,7 +141,7 @@ else
             %here we don't take a subset of the output
             last_read_row = n1;
             last_set_byte = bytes_per_row*n1;
-            [temp_data,delete_mask] = readUncompressedPages(obj,temp_data,delete_mask,start_page,stop_page,last_read_row,last_set_byte);
+            [temp_data,delete_mask] = h__readUncompressedPages(obj,temp_data,delete_mask,start_page,stop_page,last_read_row,last_set_byte);
         end
 
         %Second partial page
@@ -140,7 +149,7 @@ else
         if pageI1 ~= pageI2
             last_read_row = 0;
             last_set_byte = 0;
-            [temp_data2,delete_mask2] = readUncompressedPages(obj,temp_data2,delete_mask2,pageI2,pageI2,last_read_row,last_set_byte);
+            [temp_data2,delete_mask2] = h__readUncompressedPages(obj,temp_data2,delete_mask2,pageI2,pageI2,last_read_row,last_set_byte);
 
             n2 = keep2_stopI - keep2_startI + 1;
             temp_data(:,end-n2+1:end) = temp_data2(:,keep2_startI:keep2_stopI);
@@ -155,36 +164,17 @@ else
 
         last_read_row = 0;
         last_set_byte = 0;
-        [temp_data,delete_mask] = readUncompressedPages(obj,temp_data,delete_mask,I1,I2,last_read_row,last_set_byte);
+        [temp_data,delete_mask] = h__readUncompressedPages(obj,temp_data,delete_mask,I1,I2,last_read_row,last_set_byte);
     end
-
-
-
-    % keyboard
-    % fid2 = obj.fid;
-    % I2 = 0;
-    % row2 = 0;
-    % for i = 1:n_pages
-    %     n_rows_cur_page = data_n_rows(i);
-    %     n_bytes_read = n_rows_cur_page*bytes_per_row2;
-    %     if n_bytes_read == 0
-    %         continue
-    %     end
-    %     fseek(fid2,data_starts(i),"bof");
-    %     I1 = I2 + 1;
-    %     I2 = I2 + n_bytes_read;
-    %     temp_data(I1:I2) = fread(fid2,n_bytes_read,"*uint8")';
-    %     if has_deleted_rows
-    %         row1 = row2 + 1;
-    %         row2 = row2 + n_rows_cur_page;
-    %         delete_mask(row1:row2) = obj.all_pages(i).delete_mask(1:n_rows_cur_page);
-    %     end
-    % end
 end
 
-s = obj.rowsToData(temp_data,delete_mask);
+%Once we have all of the data we convert to real types
+%------------------------------------------------------
+s = obj.rowsToData(temp_data,delete_mask,options);
 
-output = h__convertToOutputType(s,in);
+output = options.convertToOutputType(s);
+
+%output = h__convertToOutputType(s,options);
 
 end
 
@@ -195,38 +185,59 @@ function h__startStopRowCheck(obj,start_stop_values)
 end
 
 
-function output = h__convertToOutputType(s,in)
+% % % % function output = h__convertToOutputType(s,in)
+% % % % %
+% % % % %   s :
+% % % % %   in :
+% % % % %   
+% % % % 
+% % % % %Output processing
+% % % % %------------------------------------
+% % % % switch in.output_type
+% % % %     case 'table'
+% % % %         %TODO: Add in labels to output.Properties.VariableDescriptions
+% % % %         %Add in column names even if empty table
+% % % %         output = table;
+% % % %         for i = 1:length(s)
+% % % %             name = s(i).name;
+% % % %             %This may not be the most efficient ...
+% % % %             output.(name) = s(i).values;
+% % % %         end
+% % % %     case 'struct'
+% % % %         output = s;
+% % % %         %Nothing to do
+% % % %     otherwise
+% % % %         %- If we reach this we have an error in the code
+% % % %         %  because we do this check as well at the top
+% % % %         error('Unhandled exception')
+% % % % end
+% % % % 
+% % % % end
 
-%Output processing
-%------------------------------------
-switch in.output_type
-    case 'table'
-        %TODO: Add in labels to output.Properties.VariableDescriptions
-        %Add in column names even if empty table
-        output = table;
-        for i = 1:length(s)
-            name = s(i).name;
-            output.(name) = s(i).values;
-        end
-    case 'struct'
-        output = s;
-        %Nothing to do
-    otherwise
-        %- If we reach this we have an error in the code
-        %  because we do this check as well at the top
-        error('Unhandled exception')
-end
+function [temp_data,delete_mask] = h__readUncompressedPages(obj,...
+    temp_data,delete_mask,p1,p2,last_read_row,last_set_byte)
+%
+%
+%   Inputs
+%   ------
+%   temp_data
+%   delete_mask :
+%       This is a 
+%   p1 : 
+%       First page to read
+%   p2 :
+%       Last page to read
+%   last_read_row : 
+%       
+%   last_set_byte
 
-end
-
-function [temp_data,delete_mask] = readUncompressedPages(obj,temp_data,delete_mask,p1,p2,last_read_row,last_set_byte)
 fid2 = obj.fid;
 I2 = last_set_byte;
 row2 = last_read_row;
 has_deleted_rows = obj.has_deleted_rows;
-n_rows_per_page = obj.data_n_rows;
+n_rows_per_page = obj.n_rows_per_page;
 bytes_per_row = obj.bytes_per_row;
-data_starts = obj.data_starts;
+data_starts = obj.data_start_per_page;
 for i = p1:p2
     n_rows_cur_page = n_rows_per_page(i);
     if n_rows_cur_page == 0

@@ -13,7 +13,7 @@ classdef column_size_subheader < handle
 
             %1:4  1:8  - signature
             %5:8  9:16 - n_columns
-            %9:12 17:24
+            %9:12 17:24 - unknown 9
 
             if is_u64
                 obj.n_columns = double(typecast(bytes(9:16),'uint64'));

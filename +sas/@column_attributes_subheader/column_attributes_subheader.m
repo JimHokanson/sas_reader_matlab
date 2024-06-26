@@ -6,7 +6,7 @@ classdef column_attributes_subheader < handle
     %   TODO: Summarize what this does ...
 
     properties
-
+        bytes
         unknown7
         unknown9
         unknown11
@@ -17,6 +17,7 @@ classdef column_attributes_subheader < handle
         %Width in bytes I believe ...
         column_width
         
+        %
         name_length_flag
 
         %1 - numeric
@@ -33,7 +34,15 @@ classdef column_attributes_subheader < handle
             %   7:8    11:12 - unknown7
             %   9:10   13:14 - unknown9
             %   11:12  15:16 - unknown11
+            %
+            %
             %   13:X   17:X  - specification of attributes
+            %       - offset
+            %       - width
+            %       - name_length_flag - rough length of name?
+            %       - column_type
+
+            obj.bytes = bytes;
             
             QL = length(bytes);
 

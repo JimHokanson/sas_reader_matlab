@@ -16,6 +16,7 @@ classdef header < handle
     %
 
     properties
+        bytes
         start_position
 
         %1:32
@@ -43,8 +44,15 @@ classdef header < handle
         %unknown41  %41:70
         %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas.c#L45
         character_encoding_raw  %71, FORM_DOC: WizardMac is saying only 1 byte, not 2
+        
         character_encoding_name %computed
+        %
+        %   See usage in 
+
+        character_encoding_use_lookup
+
         %unknown72  %72:84
+
         file_type   %85:92, Should = 'SAS FILE'
         table_name  %93:124
         %unknown125 %125:156
@@ -103,6 +111,8 @@ classdef header < handle
             %*** FREAD ***
             bytes = fread(fid,1024,"*uint8")';
 
+            obj.bytes = bytes;
+
             obj.magic_number = bytes(1:32);
 
             obj.b33_a2 = bytes(33);
@@ -134,97 +144,214 @@ classdef header < handle
             %https://github.com/WizardMac/ReadStat/blob/887d3a1bbcf79c692923d98f8b584b32a50daebd/src/sas/readstat_sas.c#L45
             %obj.character_encoding_raw = typecast(bytes(71:72),'int16');
             obj.character_encoding_raw = bytes(71);
+            obj.character_encoding_use_lookup = false;
             switch obj.character_encoding_raw
                 case 0
                     name = 'US-ASCII';
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_ascii = native2unicode(uint8(1:255),"US-ASCII")
                 case 20
                     name = "UTF-8";
                 case 28
                     name = 'US-ASCII';
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_ascii = native2unicode(uint8(1:255),"US-ASCII")
                 case 29
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-1
                     name = "ISO-8859-1";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_1 = native2unicode(uint8(1:255),"ISO-8859-1")
                 case 30
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-2
                     name = "ISO-8859-2";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_2 = native2unicode(uint8(1:255),"ISO-8859-2")
                 case 31
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-3
                     name = "ISO-8859-3";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_3 = native2unicode(uint8(1:255),"ISO-8859-3")
                 case 32
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-4
                     name = "ISO-8859-4";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_4 = native2unicode(uint8(1:255),"ISO-8859-4")
                 case 33
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-5
                     name = "ISO-8859-5";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_5 = native2unicode(uint8(1:255),"ISO-8859-5")
                 case 34
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-6
                     name = "ISO-8859-6";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_6 = native2unicode(uint8(1:255),"ISO-8859-6")
                 case 35
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-7
                     name = "ISO-8859-7";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_7 = native2unicode(uint8(1:255),"ISO-8859-7")
                 case 36
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-8
                     name = "ISO-8859-8";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_8 = native2unicode(uint8(1:255),"ISO-8859-8")
                 case 37
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-9
                     name = "ISO-8859-9";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_9 = native2unicode(uint8(1:255),"ISO-8859-9")
                 case 39
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-11
                     name = "ISO-8859-11";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_11 = native2unicode(uint8(1:255),"ISO-8859-11")
                 case 40
+                    %https://en.wikipedia.org/wiki/ISO/IEC_8859-15
                     name = "ISO-8859-15";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_iso_8859_15 = native2unicode(uint8(1:255),"ISO-8859-15")
                 case 41
+                    %https://en.wikipedia.org/wiki/Code_page_437
                     name = "CP437";
+                    obj.character_encoding_use_lookup = true;
                 case 42
+                    %https://en.wikipedia.org/wiki/Code_page_850
                     name = "CP850";
+                    obj.character_encoding_use_lookup = true;
                 case 43
+                    %https://en.wikipedia.org/wiki/Code_page_852
                     name = "CP852";
+                    obj.character_encoding_use_lookup = true;
                 case 44
+                    %https://en.wikipedia.org/wiki/Code_page_857
                     name = "CP857";
+                    obj.character_encoding_use_lookup = true;
                 case 45
+                    %https://en.wikipedia.org/wiki/Code_page_858
                     name = "CP858";
+                    obj.character_encoding_use_lookup = true;
                 case 46
+                    %https://en.wikipedia.org/wiki/Code_page_862
                     name = "CP862";
+                    obj.character_encoding_use_lookup = true;
                 case 47
+                    %https://en.wikipedia.org/wiki/Code_page_864
                     name = "CP864";
+                    obj.character_encoding_use_lookup = true;
                 case 48
+                    %https://en.wikipedia.org/wiki/Code_page_865
                     name = "CP865";
+                    obj.character_encoding_use_lookup = true;
                 case 49
+                    %https://en.wikipedia.org/wiki/Code_page_866
                     name = "CP866";
+                    obj.character_encoding_use_lookup = true;
                 case 50
+                    %https://en.wikipedia.org/wiki/Code_page_869
                     name = "CP869";
+                    %  chars_cp869 = native2unicode(uint8(1:255),"CP869")
                 case 51
+                    %https://en.wikipedia.org/wiki/Code_page_874
                     name = "CP874";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_cp874 = native2unicode(uint8(1:255),"CP874")
                 case 52
+                    %https://en.wikipedia.org/wiki/Code_page_921
                     name = "CP921";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_cp921 = native2unicode(uint8(1:255),"CP921")
                 case 53
                     name = "CP922";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_cp863 = native2unicode(uint8(1:255),"CP922")
                 case 54
+                    %????? unsupported, can't find
                     name = "CP1129";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_cp1129 = native2unicode(uint8(1:255),"CP1129")
                 case 55
                     name = "CP720";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_cp863 = native2unicode(uint8(1:255),"CP863")
                 case 56
                     name = "CP737";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_cp863 = native2unicode(uint8(1:255),"CP863")
                 case 57
                     name = "CP775";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_cp863 = native2unicode(uint8(1:255),"CP863")
                 case 58
                     name = "CP860";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_cp863 = native2unicode(uint8(1:255),"CP863")
                 case 59
+                    %https://en.wikipedia.org/wiki/Code_page_863
                     name = "CP863";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars_cp863 = native2unicode(uint8(1:255),"CP863")
                 case 60
-                    name = "WINDOWS-1250";
+                    %https://en.wikipedia.org/wiki/Windows-1250
+                    name = "windows-1250";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars1250 = native2unicode(uint8(1:255),"windows-1250");
                 case 61
-                    name = "WINDOWS-1251";
+                    %https://en.wikipedia.org/wiki/Windows-1251
+                    name = "windows-1251";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars1251 = native2unicode(uint8(1:255),"windows-1251");
                 case 62
-                    name = "WINDOWS-1252";
+                    %https://en.wikipedia.org/wiki/Windows-1252
+                    name = "windows-1252";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars1252 = native2unicode(uint8(1:255),"windows-1252");
                 case 63
-                    name = "WINDOWS-1253";
+                    %https://en.wikipedia.org/wiki/Windows-1253
+                    name = "windows-1253";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars1253 = native2unicode(uint8(1:255),"windows-1253");
                 case 64
-                    name = "WINDOWS-1254";
+                    %https://en.wikipedia.org/wiki/Windows-1254
+                    name = "windows-1254";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars1254 = native2unicode(uint8(1:255),"windows-1254");
                 case 65
-                    name = "WINDOWS-1255";
+                    %https://en.wikipedia.org/wiki/Windows-1255
+                    name = "windows-1255";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars1255 = native2unicode(uint8(1:255),"windows-1255");
                 case 66
-                    name = "WINDOWS-1256";
+                    %https://en.wikipedia.org/wiki/Windows-1256
+                    name = "windows-1256";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars1256 = native2unicode(uint8(1:255),"windows-1256");
                 case 67
-                    name = "WINDOWS-1257";
+                    %https://en.wikipedia.org/wiki/Windows-1257
+                    name = "windows-1257";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars1257 = native2unicode(uint8(1:255),"windows-1257");
                 case 68
-                    name = "WINDOWS-1258";
+                    %https://en.wikipedia.org/wiki/Windows-1258
+                    name = "windows-1258";
+                    obj.character_encoding_use_lookup = true;
+                    %  chars1258 = native2unicode(uint8(1:255),"windows-1258");
                 case 69
                     name = "MACROMAN";
+                    %  chars_macroman = native2unicode(uint8(1:255),"macroman");
                 case 70
+                    %unsupported ...
+                    %
+                    %   This is tricky as we need to deal with right vs
+                    %   left renderings
+                    %
+                    %   https://en.wikipedia.org/wiki/Right-to-left_mark
+                    %
                     name = "MACARABIC";
+                    %  chars_macarabic = native2unicode(uint8(1:255),"macarabic");
                 case 71
                     name = "MACHEBREW";
+                    %  chars_machebrew = native2unicode(uint8(1:255),"machebrew");
                 case 72
                     name = "MACGREEK";
                 case 73
@@ -322,12 +449,12 @@ classdef header < handle
 
 
             %------------------------------------------
-            obj.header_length = typecast(bytes(197+a1:200+a1),'uint32');
-            obj.page_length = typecast(bytes(201+a1:204+a1),'uint32');
+            obj.header_length = double(typecast(bytes(197+a1:200+a1),'uint32'));
+            obj.page_length = double(typecast(bytes(201+a1:204+a1),'uint32'));
             if obj.is_u64
-                obj.page_count = typecast(bytes(205+a1:208+a1+obj.a2),'uint64');
+                obj.page_count = double(typecast(bytes(205+a1:208+a1+obj.a2),'uint64'));
             else
-                obj.page_count = typecast(bytes(205+a1:208+a1),'uint32');
+                obj.page_count = double(typecast(bytes(205+a1:208+a1),'uint32'));
             end
 
 
@@ -354,7 +481,7 @@ classdef header < handle
             %*** FSEEK ***
             status = fseek(fid,obj.header_length,'bof');
             if status == -1
-                oerror('Unexpected error when seeking to first page')
+                error('Unexpected error when seeking to first page')
             end
         end
     end

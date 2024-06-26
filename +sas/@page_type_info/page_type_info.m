@@ -2,25 +2,53 @@ classdef page_type_info
     %
     %   Class:
     %   sas.page_type_info
+    %
+    %   See Also
+    %   --------
+    %   sas.page
 
     properties
         %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileConstants.java#L553
         %
         %   TODO: Update ...
         %
-        %Numeric value:
-        % 0 - meta, compressed data
-        % 128 - meta, compressed data, deleted rows
-        % 256 - data only
-        %
+        % -----------------------------------
+        %                   meta, data1, cdata, data2, deleted
+        %      0
+        %    128
+        %    256 
+        %    257
+        %    384 - data2
+        %    512 - data
+        %    640 - mix2     
+        %   1024 - amd
+        %  16384 - meta2
+        % -28672 - comp
+
+        %{
+        %From readstat
+        #define SAS_PAGE_TYPE_META   0x0000
+        #define SAS_PAGE_TYPE_DATA   0x0100  256
+        #define SAS_PAGE_TYPE_MIX    0x0200  512
+                                     0x0280  640
+        #define SAS_PAGE_TYPE_AMD    0x0400 1024
+        #define SAS_PAGE_TYPE_MASK   0x0F00
+        
+        #define SAS_PAGE_TYPE_META2  0x4000
+        #define SAS_PAGE_TYPE_COMP   0x9000
+        %}
+
+
         page_type
         
         %The following properties are based on the page_type value
         
         has_meta
         has_uncompressed_data
+        has_subheader_uncompressed_data
         has_compressed_data
-        has_deleted_rows      
+        has_deleted_rows    
+        has_missing_column_info = false
     end
 
     methods
@@ -35,64 +63,69 @@ classdef page_type_info
             %       .has_compressed_data
             %       .has_deleted_rows
 
-            obj.page_type = page_header.page_type;
+            obj.page_type = double(page_header.page_type);
 
             %Good ref to work off of
             %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileConstants.java#L553
+            
+            %https://github.com/epam/parso/blob/3c514e66264f5f3d5b2970bc2509d749065630c0/src/main/java/com/epam/parso/impl/SasFileParser.java#L602
+            
+            %Assuming first bit is bit 1 ... NOT 0
+            %
+            %   bit 8: has deleted rows
+            %   bit 9: no meta data ????
+            %   
+            %
+
+            %https://github.com/epam/parso/blob/master/src/main/java/com/epam/parso/impl/PageType.java
+
             switch obj.page_type
                 case 0
-                    %meta
+                    %Contains files with unknown signatures that are
+                    %uncompressed data in the array of subheaders rather
+                    %than in their own section
                     obj.has_meta = true;
                     obj.has_uncompressed_data = false;
                     obj.has_compressed_data = true;
                     obj.has_deleted_rows = false;
                 case 128
-                    %FORM DOC
-                    %seen in: q_del_pandas.sas7bdat
-                    %obj.page_name = 'data';
+                    %There are occasionally entries
+                    %in the meta here that are completely ignored
                     obj.has_meta = true;
                     obj.has_uncompressed_data = false;
                     obj.has_compressed_data = true;
                     obj.has_deleted_rows = true;
-                case {256}
-                    %
-                    %   
-                    %
-                    %767543210 - bit_ids
-                    %100000000 - bit_values
-                    %obj.page_name = 'data';
+                case 256
                     obj.has_meta = false;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
                     obj.has_deleted_rows = false;
                 case 384
-                    %384 - deleted_rows.sas7bdat
-                    %
-                    %Guessing at has_deleted_rows here
+                    %{
+                        'load_log'
+                        'data_page_with_deleted'
+                        'deleted_rows'
+                            - no subheaders
+                            - deleted rows
+                    %}
                     obj.has_meta = false;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
                     obj.has_deleted_rows = true;
                 case 512
-                    %8767543210 
-                    %1000000000
-                    %obj.page_name = 'mix';
                     obj.has_meta = true;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
                     obj.has_deleted_rows = false;
                 case 640
-                    %FORM DOC
-                    %
-                    %   - date_dd_mm_yyyy_copy.sas7bdat
-                    %
-                    %8767543210
-                    %1010000000
-                    %obj.page_name = 'mix';
-                    %
-                    %   uncompressed with deleted rows
-
-                    %I think it may have compressed ...
+                    %{
+                    'date_dd_mm_yyyy_copy'
+                    'datetime_deleted_rows'
+                    'deleted_rows'
+                    'load_log'
+                    'all_rand_normal_with_deleted'
+                    'all_rand_normal_with_deleted2'
+                    %}
                     obj.has_meta = true;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
@@ -103,18 +136,32 @@ classdef page_type_info
                     %
                     %obj.page_name = 'amd';
                     %question marks for both of these ...
-                    error('Unhandled case')
+
+                    %fts0003.sas7bdat
+
+                    %Something about missing column info????
+                    obj.has_meta = true;
+                    obj.has_uncompressed_data = true;
+                    obj.has_compressed_data = false;
+                    obj.has_deleted_rows = false; %verified
+                    obj.has_missing_column_info = true;
+
                 case 16384
-                    %321098767543210 - bit_ids
-                    %100000000000000 - bit_values
-                    %
-                    %obj.page_name = 'meta';
+                    %{
+                    'test_meta2_page'
+                    %}
 
                     obj.has_meta = true;
                     obj.has_uncompressed_data = false;
                     obj.has_compressed_data = true;
                     obj.has_deleted_rows = false;
                 case -28672
+                    %
+                    %   TODO: I think we are using uint16 so this
+                    %   is wrong ...
+                    %
+                    %   q_del_pandas.sas7bdat
+
                     %q_pandas.sas7bdat
                     %obj.page_name = 'comp';
                     %error('Unhandled case')
@@ -124,7 +171,7 @@ classdef page_type_info
                     obj.has_meta = false;
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
-                    obj.has_deleted_rows = false;
+                    obj.has_deleted_rows = true;
                 otherwise
                     error('Unrecognized option')
             end

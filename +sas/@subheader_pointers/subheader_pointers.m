@@ -27,6 +27,10 @@ classdef subheader_pointers < handle
         type
 
         section_type
+
+        signature
+
+        hex_signature
     end
 
     properties (Dependent)
@@ -43,7 +47,10 @@ classdef subheader_pointers < handle
             flag = obj.comp_flags;
             type = obj.type; %#ok<PROP>
             section_type = obj.section_type; %#ok<PROP>
-            value = table(i,offset,length,flag,type,section_type); %#ok<PROP>
+            sig = obj.signature;
+            hex_sig = obj.hex_signature;
+
+            value = table(i,offset,length,flag,type,section_type,sig,hex_sig); %#ok<PROP>
         end
     end
 
@@ -114,9 +121,13 @@ classdef subheader_pointers < handle
             obj.type = sub_types;
             n_subs = length(sub_types);
             obj.section_type = cell(n_subs,1);
+            obj.signature = zeros(n_subs,1);
+            obj.hex_signature = cell(n_subs,1);
         end
-        function logSectionType(obj,i,value)
+        function logSectionType(obj,i,value,sig_value)
             obj.section_type{i} = value;
+            obj.signature(i) = sig_value;
+            obj.hex_signature{i} = dec2hex(sig_value,8);
         end
     end
 end
