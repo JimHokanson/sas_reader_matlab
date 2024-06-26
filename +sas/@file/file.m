@@ -12,6 +12,9 @@ classdef file < handle
     %
     %   https://github.com/xiaodaigh/sas7bdat-resources/blob/master/README.md
     %
+    %
+    %   Improvements
+    %   ------------
 
     properties
         file_path
@@ -21,6 +24,8 @@ classdef file < handle
         header
 
         n_pages
+
+        %C
         all_pages
         columns
         column_names
@@ -42,11 +47,24 @@ classdef file < handle
     end
 
     methods
-        function obj = file(file_path)
+        function obj = file(file_path,varargin)
             %
             %   Loads the file meta data, setting up future data reads
+            %
+            %
+            %   See Also
+            %   --------
+            %   sas.readFile   
 
             h_tic = tic;
+
+            if nargin == 1
+                read_options = sas.file_reading_options;
+            elseif nargin == 2
+                read_options = varargin{1};
+            else
+                error('Unhandled case')
+            end
 
             obj.file_path = file_path;
 
@@ -81,7 +99,7 @@ classdef file < handle
             data_n_rows = zeros(1,obj.n_pages);
 
             i = 1;
-            p = sas.page(fid,h,i,obj,obj.subheaders);
+            p = sas.page(fid,h,i,obj.subheaders,read_options);
             all_pages{1} = p;
 
             data_starts(1) = p.header.data_block_start;
@@ -99,7 +117,7 @@ classdef file < handle
             if sig_sh.last_meta_page > 1
                 max_page = sig_sh.last_meta_page;
                 for i = 2:max_page
-                    p = sas.page(fid,h,i,obj);
+                    p = sas.page(fid,h,i,obj.sunheaders,read_options);
                     all_pages{i} = p;
                     data_starts(i) = p.header.data_block_start;
                     data_n_rows(i) = p.header.data_block_count;
@@ -114,10 +132,19 @@ classdef file < handle
             obj.columns = obj.subheaders.extractColumns();
             obj.column_names = {obj.columns.name}';
 
+            if read_options.read_intro_pages_only
+                return
+            end
+
             %Processing of the remaining pages
             %----------------------------------------------------------
+            %
+            %   Note in some poorly formatted files there may be some 
+            %   meta data here :/
+            %
+            %   
             for i = next_page:obj.n_pages
-                p = sas.page(fid,h,i,obj,obj.subheaders);
+                p = sas.page(fid,h,i,obj,obj.subheaders,read_options);
                 data_starts(i) = p.header.data_block_start;
                 data_n_rows(i) = p.header.data_block_count;
                 all_pages{i} = p;
@@ -177,6 +204,14 @@ classdef file < handle
 
             obj.last_data_read_parse_time = toc(h);
 
+        end
+    end
+
+    methods
+        function delete(obj)
+            try %#ok<TRYNC>
+                fclose(obj.fid)
+            end
         end
     end
 end

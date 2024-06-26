@@ -6,6 +6,7 @@ classdef page < handle
     %   See Also
     %   --------
     %   sas.file
+    %   sas.subheaders
 
     properties
         %count on which page is being processed, starting at 1
@@ -20,7 +21,10 @@ classdef page < handle
         subheaders
 
         full_bytes
+        
+        %cell array ...
         comp_data_rows = {}
+
         delete_mask
         has_delete_mask = false
         has_compressed = false
@@ -41,7 +45,7 @@ classdef page < handle
     %}
 
     methods
-        function obj = page(fid,h,page_index,parent,subheaders)
+        function obj = page(fid,h,page_index,subheaders,read_options)
             %
             %   h : sas.header
             %
@@ -147,6 +151,22 @@ classdef page < handle
                 subheader_pointers_offset = 8;
 
                 BC = obj.header.data_block_count;
+
+                %TODO: Compare this to # of rows of data that we have ...
+                %   - comp_data_rows - {1 x n_rows}
+                %   - 
+
+                if ~isempty(obj.comp_data_rows)
+                    %Is this something in the page type that indicates
+                    %this?
+                    error('Unhandled case, deleted entries and comparessed data present')
+                
+                    %Note, if this happens, we should check if we also have
+                    %BC as well
+
+                    %n_rows_total = BC + length(obj.comp_data_rows)
+                end
+
 
                 row_length = subheaders.row_size.row_length;
 

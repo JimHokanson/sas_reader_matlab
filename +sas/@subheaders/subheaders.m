@@ -3,6 +3,11 @@ classdef subheaders < handle
     %   Class:
     %   sas.subheaders
     %
+    %   This class does two things:
+    %   1) processes page subheaders
+    %   2) holds onto special subheaders
+    %   
+    %
     %   See Also
     %   --------
     %   sas.subheader_pointers
@@ -141,6 +146,10 @@ classdef subheaders < handle
 
                 %Compressed data in header
                 %------------------------------------
+                %
+                % 4 - compression
+                %
+                %   Have I also seen a 5>?
                 if sub_comp_flags(i) == 4
                     c_count = c_count + 1;
                     if obj.compression_mode == "rdc"
@@ -248,7 +257,17 @@ classdef subheaders < handle
                         obj.col_name = [obj.col_name sub_headers{i}];
                         s.logSectionType(i,'col-name');
                     otherwise
+                        %For some reason nonsense header signature are used
+                        %and this means you have uncompressed raw data
+                        %
+                        %This tends to only happen though if other data
+                        %is compressed in this section
+                        %
+                        %TODO: Do we set a compression mode by default?
                         if obj.compression_mode == "rdc"
+                            comp_data_rows{end+1} = b2';
+                            continue
+                        elseif obj.compression_mode == "rle"
                             comp_data_rows{end+1} = b2';
                             continue
                         else

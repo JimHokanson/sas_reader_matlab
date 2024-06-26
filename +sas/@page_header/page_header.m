@@ -21,6 +21,8 @@ classdef page_header
         %bytes 5:B
         unknown5
 
+        %I think this is only uncompressed data at the end and NOT
+        %the number of rows
         data_block_count %BC
         data_block_start
 
@@ -29,7 +31,6 @@ classdef page_header
         n_bytes_sub_pointer %SL
 
         n_bytes_all_sub_pointers
-        
     end
 
     methods
@@ -88,6 +89,7 @@ classdef page_header
             %   by comp_flags == 1
             obj.n_subheaders = double(typecast(bytes(B+5:B+6),'uint16'));
 
+            %??? Is this # of rows or only uncompressed data at the end?
             obj.data_block_count = obj.data_block_count - obj.n_subheaders;
 
             obj.unknown2 = double(typecast(bytes(B+7:B+8),'uint16'));

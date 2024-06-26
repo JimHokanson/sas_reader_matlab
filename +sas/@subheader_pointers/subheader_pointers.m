@@ -17,6 +17,7 @@ classdef subheader_pointers < handle
 
         %1) truncated - ignore rest
         %4) compressed
+        %5) Did I see this???
         comp_flags
         
         %TODO: Add documentation here
