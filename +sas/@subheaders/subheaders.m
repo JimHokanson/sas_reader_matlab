@@ -54,7 +54,7 @@ classdef subheaders < handle
             obj.fid = fid;
             obj.page_length = page_length;
         end
-        function [sub_headers, comp_data_rows] = processPageSubheaders(obj,s,page,bytes,logger)
+        function [sub_headers, comp_data_rows] = processPageSubheaders(obj,s,page,bytes)
             %
             %
             %   Utilizing the pointer info, process each sub-header. This
@@ -75,36 +75,10 @@ classdef subheaders < handle
             %       Due to the way the data are stored this is actually
             %       compressed with the occassional 
 
-
-%{
-
-                        %For some reason nonsense header signature are used
-                        %and this means you have uncompressed raw data
-                        %
-                        %This tends to only happen though if other data
-                        %is compressed in this section
-                        %
-                        %TODO: Do we set a compression mode by default?
-                        if obj.compression_mode == "rdc"
-                            comp_data_rows{end+1} = b2';
-                            continue
-                        elseif obj.compression_mode == "rle"
-                            comp_data_rows{end+1} = b2';
-                            continue
-                        else
-                            keyboard
-                        end
-                        error('Unrecognized header')
-%}
-
-
-
-
             %This call is just to remove the nesting ...
             %
             %   Could move it to its own file ...
-            [sub_headers, comp_data_rows] = h__processPageSubheaders(...
-                obj,s,page,bytes,logger);
+            [sub_headers, comp_data_rows] = h__processPageSubheaders(obj,s,page,bytes);
         end
         function columns = extractColumns(obj,file_header)
             %Creation of the column entries
@@ -153,7 +127,7 @@ classdef subheaders < handle
 end
 
 function [sub_headers, uncompressed_data] = h__processPageSubheaders(...
-    obj,s,page,bytes,logger)
+    obj,s,page,bytes)
 %
 %
 %   Inputs
@@ -166,8 +140,8 @@ sub_offsets = s.offsets;
 sub_lengths = s.lengths;
 sub_comp_flags = s.comp_flags;
 
-
-page_type_info = page.page_type_info;
+%logger = obj.logger;
+%page_type_info = page.page_type_info;
 
 
 %List

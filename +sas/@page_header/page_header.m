@@ -39,6 +39,8 @@ classdef page_header
             %   This is the first step in the processing ...
             %   
             %   header = sas.page_header(fid,h)
+            %
+            %   fid is assumed to be point to the end of the last page
             
             obj.start_position = ftell(fid);
             obj.is_u64 = h.is_u64;

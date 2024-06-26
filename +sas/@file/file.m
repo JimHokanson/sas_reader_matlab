@@ -125,8 +125,10 @@ classdef file < handle
             data_n_rows = zeros(1,obj.n_pages);
 
             i = 1;
-            p = sas.page(fid,h,i,obj.subheaders,read_options);
+            fid1 = ftell(fid);
+            p = sas.page(fid,obj.header,i,obj.subheaders,read_options);
             all_pages{1} = p;
+            fid2 = ftell(fid);
 
             data_starts(1) = p.header.data_block_start;
             data_n_rows(1) = p.header.data_block_count;
@@ -143,7 +145,7 @@ classdef file < handle
             if sig_sh.last_meta_page > 1
                 max_page = sig_sh.last_meta_page;
                 for i = 2:max_page
-                    p = sas.page(fid,h,i,obj.sunheaders,read_options);
+                    p = sas.page(fid,obj.header,i,obj.sunheaders,read_options);
                     all_pages{i} = p;
                     data_starts(i) = p.header.data_block_start;
                     data_n_rows(i) = p.header.data_block_count;
@@ -155,7 +157,7 @@ classdef file < handle
 
             %Column extraction
             %-------------------------------------------------
-            obj.columns = obj.subheaders.extractColumns();
+            obj.columns = obj.subheaders.extractColumns(obj.header);
             obj.column_names = {obj.columns.name}';
 
             if read_options.read_intro_pages_only
@@ -168,16 +170,52 @@ classdef file < handle
             %   Note in some poorly formatted files there may be some 
             %   meta data here :/
             %
-            %   
-            for i = next_page:obj.n_pages
-                p = sas.page(fid,h,i,obj,obj.subheaders,read_options);
-                data_starts(i) = p.header.data_block_start;
-                data_n_rows(i) = p.header.data_block_count;
-                obj.has_deleted_rows = obj.has_deleted_rows || p.has_deleted_rows;
-                all_pages{i} = p;
-            end
+           
+            if read_options.pages_to_read == -1
+                %The default path ...
+                for i = next_page:obj.n_pages
+                    p = sas.page(fid,obj.header,i,obj.subheaders,read_options);
+                    data_starts(i) = p.header.data_block_start;
+                    data_n_rows(i) = p.header.data_block_count;
+                    obj.has_deleted_rows = obj.has_deleted_rows || p.has_deleted_rows;
+                    all_pages{i} = p;
+                end
+            else
+                %Get relevant pages from the options
+                %
+                %   The tricky part here is potentially merging
+                %   things already read with things to read
+                [page_indices,read_page,all_pages,data_starts,data_n_rows] = ...
+                    read_options.getPageReadingList(next_page,all_pages,data_starts,data_n_rows);
 
-            obj.all_pages = [all_pages{:}];
+
+                %TODO: Update has_deleted_rows entries
+                %
+                %   Pages with deleted entries may not be included below
+
+                for i = 1:length(page_indices)
+                    if read_page(i)
+                    current_index = page_indices(i);
+                    
+                    %Seek correction
+                    n_prev_pages = current_index - 1;
+                    seek_target = fid1 + (fid2-fid1)*n_prev_pages;
+                    fseek(obj.fid,seek_target,"bof");
+
+                    %Read the page ...
+                    p = sas.page(fid,obj.header,current_index,obj.subheaders,read_options);
+                    data_starts(i) = p.header.data_block_start;
+                    data_n_rows(i) = p.header.data_block_count;
+
+                    %This may be innacurate now
+                    obj.has_deleted_rows = obj.has_deleted_rows || p.has_deleted_rows;
+                    all_pages{i} = p;
+                    end
+
+                end
+                
+            end
+                obj.all_pages = [all_pages{:}];
 
             obj.data_start_per_page = data_starts;
             obj.n_rows_per_page = data_n_rows;
@@ -363,7 +401,7 @@ classdef file < handle
     methods
         function delete(obj)
             try %#ok<TRYNC>
-                fclose(obj.fid)
+                fclose(obj.fid);
             end
         end
     end

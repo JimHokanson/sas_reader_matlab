@@ -172,6 +172,12 @@ classdef page_type_info
                     obj.has_uncompressed_data = true;
                     obj.has_compressed_data = false;
                     obj.has_deleted_rows = true;
+                case -32768
+                    %no idea - these values are not set properly
+                    obj.has_meta = false;
+                    obj.has_uncompressed_data = true;
+                    obj.has_compressed_data = false;
+                    obj.has_deleted_rows = true;
                 otherwise
                     error('Unrecognized option')
             end

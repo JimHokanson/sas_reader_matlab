@@ -25,6 +25,7 @@ classdef page < handle
 
         subheader_pointers sas.subheader_pointers
 
+        %I think these are local subheaders
         subheaders
 
         full_bytes
@@ -62,10 +63,16 @@ classdef page < handle
     %}
 
     methods
-        function obj = page(fid,h,page_index,subheaders,read_options)
+        function obj = page(fid,file_header,page_index,subheaders,read_options)
             %
+            %   Inputs
+            %   ------
             %   h : sas.header
-            %
+            %   page_index :
+            %       index, 1 based, of which page is being read
+            %   subheaders : sas.subheaders
+            %   read_options : sas.file_reading_options
+            %   
 
             %Might remove eventually ...
             obj.page_index = page_index;
@@ -99,12 +106,19 @@ classdef page < handle
             elseif page_type == 16384
                 logger.has_16384 = page_index;
             elseif page_type == -28672
+                %Which file has this????
                 logger.has_28672 = page_index;
+            elseif page_type == -32768
+                %This is from fitbit heart rate file
+                %What are the bit masks on these
+                %page_index
+                %keyboard
             end
 
             %-28672
+            %-32768 
             %-> skip ...
-            if obj.page_type_info.page_type == -28672
+            if obj.page_type_info.page_type == -28672 || page_type == -32768
                 h__seekToNextPage(obj,fid,file_header)
                 return
             end
@@ -139,7 +153,7 @@ classdef page < handle
 
             [obj.subheaders,obj.comp_data_rows] = ...
                 subheaders.processPageSubheaders(obj.subheader_pointers,...
-                obj,obj.full_bytes,logger);
+                obj,obj.full_bytes);
 
             obj.has_compressed = ~isempty(obj.comp_data_rows);
 
