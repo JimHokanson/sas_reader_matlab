@@ -35,6 +35,8 @@ function [t,file] = readFile(file_path,varargin)
 
 %Note, I'm not advertising this but it works
 in.parser = 'matlab';
+%Python - relies on Pandas being installed
+%Parso - uses Parso jars I'm distributing
 in = sas.sl.in.processVarargin(in,varargin);
 
 persistent start_path
