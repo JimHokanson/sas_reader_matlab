@@ -16,6 +16,13 @@ This code works on a large set of files, but as a reverse engineering effort, it
 
 The biggest issue is respect to column formats. Some formats are dates or datetimes and may be returned as numerics instead of being properly converted. This is a quick fix, I just need to know what column format is not being supported properly. In rare instances I may need an example file to work with.
 
+# System and File Support
+
+This code should work on both Mac and Windows. It would work on Linux but some code needs to be compiled. Technically if your file is not compressed it should work on Linux without compiling the code.
+
+SAS files can technically be big- or little-endian. Basically no one uses big-endian anymore, and supporting it is a pain, so the parser doesn't support it. If you happen to have a big-endian file, congrats, you should consider playing the lottery. If you really need help with reading a big-endian file let me know and I can tell you how to modify the code to make it work.
+
+
 # Usage
 
 ```matlab
