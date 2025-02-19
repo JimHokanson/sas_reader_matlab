@@ -124,6 +124,8 @@ classdef file < handle
             data_starts = zeros(1,obj.n_pages);
             data_n_rows = zeros(1,obj.n_pages);
 
+            %Read the first page
+            %------------------------------------------------------
             i = 1;
             fid1 = ftell(fid);
             p = sas.page(fid,obj.header,i,obj.subheaders,read_options);
@@ -132,6 +134,8 @@ classdef file < handle
 
             data_starts(1) = p.header.data_block_start;
             data_n_rows(1) = p.header.data_block_count;
+            n_samples = p.n_rows;
+            
 
             %   one_observation.sas7bdat
             %
@@ -149,6 +153,7 @@ classdef file < handle
                     all_pages{i} = p;
                     data_starts(i) = p.header.data_block_start;
                     data_n_rows(i) = p.header.data_block_count;
+                    n_samples = n_samples + p.n_rows;
                 end
                 next_page = max_page + 1;
             else
@@ -169,14 +174,35 @@ classdef file < handle
             %
             %   Note in some poorly formatted files there may be some 
             %   meta data here :/
-            %
-           
-            if read_options.pages_to_read == -1
+            
+            if read_options.read_pages_until_n_exceeds ~= -1
+                n_samples_read = read_options.read_pages_until_n_exceeds;
+                if n_samples_read
+                    %All done
+                else
+                    for i = next_page:obj.n_pages
+                        p = sas.page(fid,obj.header,i,obj.subheaders,read_options);
+                        data_starts(i) = p.header.data_block_start;
+                        data_n_rows(i) = p.header.data_block_count;
+                        n_samples = n_samples + p.n_rows;
+                        if n_samples_read
+                            break
+                        end
+                        obj.has_deleted_rows = obj.has_deleted_rows || p.has_deleted_rows;
+                        all_pages{i} = p;
+                    end
+                end
+
+                all_pages = all_pages(1:i);
+                data_n_rows = data_n_rows(1:i);
+                data_starts = data_starts(1:i);
+            elseif read_options.pages_to_read == -1
                 %The default path ...
                 for i = next_page:obj.n_pages
                     p = sas.page(fid,obj.header,i,obj.subheaders,read_options);
                     data_starts(i) = p.header.data_block_start;
                     data_n_rows(i) = p.header.data_block_count;
+                    n_samples = n_samples + data_n_rows(i);
                     obj.has_deleted_rows = obj.has_deleted_rows || p.has_deleted_rows;
                     all_pages{i} = p;
                 end
@@ -206,6 +232,7 @@ classdef file < handle
                     p = sas.page(fid,obj.header,current_index,obj.subheaders,read_options);
                     data_starts(i) = p.header.data_block_start;
                     data_n_rows(i) = p.header.data_block_count;
+                    n_samples = n_samples + data_n_rows(i);
 
                     %This may be innacurate now
                     obj.has_deleted_rows = obj.has_deleted_rows || p.has_deleted_rows;

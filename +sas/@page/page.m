@@ -14,7 +14,6 @@ classdef page < handle
         %count on which page is being processed, starting at 1
         page_index
 
-
         header sas.page_header
         data_block_count
         data_block_start
@@ -36,6 +35,8 @@ classdef page < handle
 
         %Flag indicating that delete_mask has been set
         has_delete_mask = false
+
+        n_rows = 0
 
         %page_type_notes
         %--------------------
@@ -83,6 +84,7 @@ classdef page < handle
 
             obj.data_block_count = obj.header.data_block_count;
             obj.data_block_start = obj.header.data_block_start;
+            obj.n_rows = obj.data_block_start;
 
             obj.has_uncompressed = obj.data_block_count > 0;
 
@@ -154,6 +156,9 @@ classdef page < handle
             [obj.subheaders,obj.comp_data_rows] = ...
                 subheaders.processPageSubheaders(obj.subheader_pointers,...
                 obj,obj.full_bytes);
+
+            %If we ever do lazy loading of compression this might off
+            obj.n_rows = obj.n_rows + size(obj.comp_data_rows,1);
 
             obj.has_compressed = ~isempty(obj.comp_data_rows);
 

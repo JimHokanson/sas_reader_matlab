@@ -3,7 +3,18 @@ classdef file_reading_options < handle
     %   Class:
     %   sas.file_reading_options
 
+    %{
+        
+    options = sas.file_reading_options();
+    options.read_pages_until_n_exceeds = 10;
+
+    f = sas.file(file_path,options);
+    t = f.readData('output_type','table');
+
+    %}
+
     properties
+        read_pages_until_n_exceeds = -1
         pages_to_read = -1
 
         %If true only the first few pages are read that specify
