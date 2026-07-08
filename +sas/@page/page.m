@@ -133,7 +133,7 @@ classdef page < handle
                 %   the only thing left is uncompressed data.
 
                 h__earlyDeleteCheckingAndAdvance(obj,fid,file_header,...
-                    file_has_deleted_rows,subheaders);
+                    subheaders);
                 return
             end
 
@@ -259,9 +259,17 @@ obj.full_bytes = bytes;
 
 end
 
-function h__earlyDeleteCheckingAndAdvance(obj,fid,file_header,...
-    file_has_deleted_rows,subheaders)
+function h__earlyDeleteCheckingAndAdvance(obj,fid,file_header,subheaders)
 
+%   Note on the "file has deletes elsewhere" case:
+%   -----------------------------------------------
+%   A page with no subheaders that also has no delete info of its own
+%   used to be handled here by keying off a file-level flag
+%   (file_has_deleted_rows) and stamping an all-false delete_mask. That
+%   responsibility now lives in sas.file's post-parse "Delete mask
+%   checking" step, which fills in false masks for any pages that lack
+%   one once every page has been read (the file-level flag isn't fully
+%   known until then). So we only need to react to this page's own info.
 
 if obj.has_deleted_rows
     %happens with 384
@@ -273,23 +281,6 @@ if obj.has_deleted_rows
     %Could work on learning how to skip better ...
     h__readAllPageBytes(obj,fid,file_header)
     obj.processDeletedMask(subheaders);
-elseif file_has_deleted_rows
-    %
-    %   load_log.sas7bdat
-    %   data_page_with_deleted.sas7bdat
-    %
-    %   happens with 256
-    %
-    %   Essentially getting here indicates that other
-    %   sections have indicated deleted markers but this
-    %   section has no such indication.
-    %
-    %   When not specified assume no rows are to be
-    %   deleted.
-
-    obj.delete_mask = false(1,obj.data_block_count);
-    obj.has_delete_mask = true;
-    h__seekToNextPage(obj,fid,file_header)
 else
     h__seekToNextPage(obj,fid,file_header)
 end
